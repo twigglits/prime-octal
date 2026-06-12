@@ -1,0 +1,108 @@
+prime-octal — prime numbers through the base-8 lens
+====================================================
+N = 8^10 = 1073741824 (octal 10000000000)
+GPU: NVIDIA GeForce RTX 5090 | sieve+stats kernel 78.1 ms | pipeline 0.85 s
+pi(8^10) = 54400028
+
+1. PRIME EMERGENCE PER OCTAL BAND   (band b = numbers with b octal digits)
+   b              range (octal)         primes    Li estimate    ratio        pi(8^b) known
+   1                       1..7              4              4   0.9504              4   ✓
+   2                     10..77             14             17   0.8393             18   ✓
+   3                   100..777             79             82   0.9659             97   ✓
+   4                 1000..7777            467            473   0.9869            564   ✓
+   5               10000..77777           2948           2967   0.9935           3512   ✓
+   6             100000..777777          19488          19525   0.9981          23000   ✓
+   7           1000000..7777777         132611         132671   0.9995         155611   ✓
+   8         10000000..77777777         922260         922482   0.9998        1077871   ✓
+   9       100000000..777777777        6525682        6526161   0.9999        7603553   ✓
+  10     1000000000..7777777777       46796475       46797092   1.0000       54400028   ✓
+
+2. OCTAL PREDICTOR — candidates from base-8 digit rules only
+   rules: last digit odd | alt digit sum ≢ 0 (mod 3) | digit sum ≢ 0 (mod 7)
+          | weighted digit sum (1,3,4,2) ≢ 0 (mod 5)
+   b      odd numbers       candidates    cand%         primes  precision     theory   recall
+   1                3                0    0.00%              4          -          -    0.00%
+   2               28               14   50.00%             14   100.000%   119.150%  100.00%
+   3              224              102   45.54%             79    77.451%    80.183%  100.00%
+   4             1792              819   45.70%            467    57.021%    57.778%  100.00%
+   5            14336             6553   45.71%           2948    44.987%    45.282%  100.00%
+   6           114688            52430   45.72%          19488    37.170%    37.240%  100.00%
+   7           917504           419430   45.71%         132611    31.617%    31.631%  100.00%
+   8          7340032          3355443   45.71%         922260    27.485%    27.492%  100.00%
+   9         58720256         26843545   45.71%        6525682    24.310%    24.312%  100.00%
+  10        469762048        214748366   45.71%       46796475    21.791%    21.792%  100.00%
+   every prime > 7 survives the rules (recall 100% beyond band 1); the four
+   rule primes 2,3,5,7 are each rejected by their own rule. The rules keep
+   48/210 = 22.857% of integers, a 4.375x concentration of primes.
+
+3. LAST OCTAL DIGIT OF PRIMES (p mod 8) — per band
+   every odd square ends in octal 1, so digit 1 is the quadratic-residue
+   class: Chebyshev bias predicts it trails its peers.
+   b           ...1           ...3           ...5           ...7 bias D(b) = avg(3,5,7) - c1
+   2              2              4              5              3             +2.0
+   3             18             20             19             22             +2.3
+   4            113            121            118            115             +5.0
+   5            729            743            741            735            +10.7
+   6           4857           4878           4869           4884            +20.0
+   7          33089          33130          33218          33174            +85.0
+   8         230427         230680         230557         230596           +184.0
+   9        1631330        1631477        1631529        1631346           +120.7
+  10       11698066       11699975       11699407       11699027          +1403.7
+ all       13598631       13601029       13600464       13599903          +1834.3
+
+4. LEADING OCTAL DIGIT OF PRIMES vs Benford(base 8)
+     b     lead 1     lead 2     lead 3     lead 4     lead 5     lead 6     lead 7
+     2    14.286%    21.429%    14.286%     7.143%    21.429%     7.143%    14.286%
+     3    16.456%    15.190%    13.924%    15.190%    12.658%    12.658%    13.924%
+     4    16.060%    14.989%    14.347%    14.133%    13.704%    13.490%    13.276%
+     5    15.739%    14.959%    14.620%    13.976%    14.009%    13.535%    13.161%
+     6    15.548%    14.866%    14.429%    14.101%    13.880%    13.726%    13.449%
+     7    15.376%    14.747%    14.387%    14.147%    13.937%    13.767%    13.639%
+     8    15.217%    14.698%    14.384%    14.156%    13.991%    13.836%    13.718%
+     9    15.107%    14.652%    14.374%    14.175%    14.015%    13.894%    13.783%
+    10    15.017%    14.615%    14.366%    14.188%    14.046%    13.931%    13.837%
+    B8    33.333%    19.499%    13.835%    10.731%     8.768%     7.413%     6.422%   <- Benford base-8 reference
+
+5. OCTAL DIGIT FREQUENCY ACROSS ALL DIGITS OF ALL PRIMES
+   digit         0         1         2         3         4         5         6         7
+   share    9.968%   14.035%   11.450%   13.962%   11.399%   13.923%   11.367%   13.896%
+
+6. LAST TWO OCTAL DIGITS (p mod 64) — extremes over all primes
+   most common: ..3 (1700717)  ..21 (1700637)  ..5 (1700516)  ..53 (1700328)  ..45 (1700301)  
+   least common: ..25 (1699573)  ..33 (1699552)  ..11 (1699460)  ..61 (1699313)  ..1 (1699214) 
+
+7. PRIME GAPS THROUGH THE OCTAL LENS
+   gap mod 8 (even gaps):  0: 18.551%  2: 27.498%  4: 26.359%  6: 27.592%
+   most common gaps: 6 (6493997)  12 (4772115)  10 (3718779)  2 (3650557)  4 (3650515)  18 (3582839)  8 (2875758)  14 (2632512)  
+   twin primes: 3650557 | max gap: 282 after 436273009 (octal 3200177561)
+     b          twins            max gap        after prime (octal)
+     1              2                  2                          3
+     2              5                  6                         27
+     3             17                 14                        161
+     4             83                 34                       2457
+     5            398                 72                      75245
+     6           2174                 86                     460421
+     7          12821                148                    7527155
+     8          76746                154                   21576501
+     9         479067                222                  722013013
+    10        3079244                282                 3200177561
+
+8. OCTAL PALINDROMIC PRIMES (digits read the same both ways in base 8)
+   total: 2319  (no 2-digit octal palindromic prime exists: 0oDD = 9*D)
+     b        count   first examples (octal)
+     1            4   2 3 5 7 
+     2            0   
+     3           13   111 131 141 161 323 343 373 535 
+     4            0   
+     5           47   10301 10601 11511 12421 12621 13031 13331 15151 
+     6            0   
+     7          311   1001001 1007001 1016101 1022201 1034301 1037301 1043401 1046401 
+     8            0   
+     9         1944   100060001 100151001 100202001 100262001 100303001 100414001 100575001 100656001 
+    10            0   
+
+9. THE BASE-8 IDENTITIES BEHIND THE PREDICTOR
+   8 ≡ 1 (mod 7): n ≡ its octal digit sum (mod 7)
+   8 ≡ -1 (mod 3): n ≡ its alternating octal digit sum (mod 3)
+   8^i mod 5 cycles 1,3,4,2: weighted octal digit sum gives n mod 5
+   last octal digit carries n mod 8; odd squares all end in octal 1
