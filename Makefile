@@ -48,7 +48,10 @@ figures:
 lattice:
 	python3 tools/lattice3d.py 16384
 
+crystal:
+	python3 tools/crystal_formula.py
+
 clean:
 	rm -rf $(BIN)
 
-.PHONY: all test run cpu cpu-run figures lattice clean
+.PHONY: all test run cpu cpu-run figures lattice crystal clean

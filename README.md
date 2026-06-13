@@ -35,6 +35,15 @@ doubles every plane and lattice slope (`slope_hex = 2·slope_oct mod p`) — sam
 a primorial width (30) snaps the crystal into a clean tile while powers of two can only
 shear it. Built with `make lattice`.
 
+**[`docs/the-crystal-formula.md`](docs/the-crystal-formula.md)** answers the natural
+follow-up: *if the composite crystal is exactly predictable, write the equation and the
+holes are the primes.* It does — `isPrime(n) = [gcd(n, ∏_{p≤√n} p) = 1]`, derived and
+verified — but proves the honest catch: a **fixed** crystal's holes are primes **+**
+impostors (smallest `11²=121`, precision → `4.375/ln n`); the holes equal the primes only
+when the crystal **grows to √n**, which is the Sieve of Eratosthenes itself. No fixed
+crystal can do it (**primality is not periodic** — proof included). Built with
+`make crystal`.
+
 ## The octal machinery
 
 Base 8 admits exact divisibility identities, analogous to decimal digit-sum tricks:
