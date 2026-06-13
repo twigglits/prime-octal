@@ -1,0 +1,74 @@
+prime-octal — octal wheel vs hex wheel (CPU survey)
+====================================================
+N = 10000000000   pi(N) = 455052511
+
+1. OCTAL WHEEL  (last octal digit = p mod 8)
+   spoke  coprime?   count        share     note
+   0      no                   0   0.0000%   forbidden (shares 2 with base)
+   1      yes          113758759  24.9990%   quadratic-residue class (odd^2 = 1 mod 8)
+   2      no                   1   0.0000%   forbidden (shares 2 with base)
+   3      yes          113763027  25.0000%   prime corridor
+   4      no                   0   0.0000%   forbidden (shares 2 with base)
+   5      yes          113764516  25.0003%   prime corridor
+   6      no                   0   0.0000%   forbidden (shares 2 with base)
+   7      yes          113766208  25.0007%   prime corridor
+   -> 4 of 8 spokes carry primes (phi(8)=4) = 50.0% admissible density
+
+2. HEX WHEEL  (last hex digit = p mod 16)
+   spoke  coprime?   count        share     note
+    0     no                   0   0.0000%   forbidden (even)
+    1     yes           56880273  12.4997%   quadratic-residue class (odd^2 in {1,9} mod 16)
+    2     no                   1   0.0000%   forbidden (even)
+    3     yes           56881472  12.5000%   prime corridor
+    4     no                   0   0.0000%   forbidden (even)
+    5     yes           56882100  12.5001%   prime corridor
+    6     no                   0   0.0000%   forbidden (even)
+    7     yes           56883409  12.5004%   prime corridor
+    8     no                   0   0.0000%   forbidden (even)
+    9     yes           56878486  12.4993%   quadratic-residue class (odd^2 in {1,9} mod 16)
+   10     no                   0   0.0000%   forbidden (even)
+   11     yes           56881555  12.5000%   prime corridor
+   12     no                   0   0.0000%   forbidden (even)
+   13     yes           56882416  12.5002%   prime corridor
+   14     no                   0   0.0000%   forbidden (even)
+   15     yes           56882799  12.5003%   prime corridor
+   -> 8 of 16 spokes carry primes (phi(16)=8) = 50.0% admissible density
+
+3. THE DELTA  (each octal spoke splits into two hex spokes: d and d+8)
+   the only new information is bit 3 (the 8's bit) of p.
+   octal d   count       ->  hex d      hex d+8     low/high split
+   1           113758759  ->     56880273    56878486   50.001% / 49.999%
+   3           113763027  ->     56881472    56881555   50.000% / 50.000%
+   5           113764516  ->     56882100    56882416   50.000% / 50.000%
+   7           113766208  ->     56883409    56882799   50.000% / 50.000%
+   reading: the extra hex bit splits every octal corridor ~50/50.
+   the hex wheel is the octal wheel at 2x angular resolution -- no new
+   prime structure, just one more bit of p revealed.
+
+4. CHEBYSHEV BIAS  (which corridors run light?)
+   octal corridors fewest->most: 1(24.9990%) 3(25.0000%) 5(25.0003%) 7(25.0007%) 
+   -> spoke 1 is the quadratic-residue class and trails.
+   hex corridors  fewest->most: 9(12.4993%) 1(12.4997%) 3(12.5000%) 11(12.5000%) 5(12.5001%) 13(12.5002%) 15(12.5003%) 7(12.5004%) 
+   -> spokes 1 and 9 (the QR classes) trail; and octal-1 = hex-1 + hex-9,
+      so the octal deficit splits exactly into the two deficient hex spokes.
+
+5. WHY OCTAL=HEX AT THE LAST DIGIT: admissible density phi(b)/b
+   a base's last digit only screens the primes that divide the base.
+   base b   factorization      phi(b)/b     primes screened by last digit
+   2        2                   50.00%      2
+   8        2^3                 50.00%      2  (only!)
+   16       2^4                 50.00%      2  (only!)
+   32       2^5                 50.00%      2  (only!)
+   10       2*5                 40.00%      2, 5
+   6        2*3                 33.33%      2, 3
+   30       2*3*5               26.67%      2, 3, 5
+   210      2*3*5*7             22.86%      2, 3, 5, 7
+   -> every power of two sticks at 50%: it only ever screens the prime 2.
+      octal and hex are informationally identical at the last digit.
+      the real corridors tighten with PRIMORIAL bases (6,30,210,...),
+      which is exactly what the base-8 *multi-digit* predictor reconstructs.
+
+6. EQUIDISTRIBUTION in a primorial wheel (base 30, the 8 corridors)
+   1:12.499% 7:12.500% 11:12.500% 13:12.500% 17:12.500% 19:12.500% 23:12.500% 29:12.500% 
+   -> Dirichlet: primes spread evenly across the coprime spokes.
+

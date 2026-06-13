@@ -27,7 +27,25 @@ test: $(BIN)/test_prime_octal
 run: $(BIN)/prime_octal
 	$(BIN)/prime_octal --octal-digits 10 --out results
 
+# ---- CPU companion (no GPU): octal-wheel vs hex-wheel comparative survey ----
+# Runs anywhere with a C++17 host compiler; see docs/octal-vs-hex.md.
+CXX  ?= c++
+N    ?= 1000000000
+
+cpu: $(BIN)/cpu_survey
+
+$(BIN)/cpu_survey: src/cpu_survey.cpp
+	@mkdir -p $(BIN)
+	$(CXX) -O3 -std=c++17 -o $@ $<
+
+cpu-run: $(BIN)/cpu_survey
+	@mkdir -p results
+	$(BIN)/cpu_survey $(N)
+
+figures:
+	python3 tools/visualize.py
+
 clean:
 	rm -rf $(BIN)
 
-.PHONY: all test run clean
+.PHONY: all test run cpu cpu-run figures clean

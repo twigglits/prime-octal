@@ -8,6 +8,24 @@ The GPU sieves and analyzes all integers below 8^K (up to 8^12 ≈ 6.9 × 10^10)
 every statistic by *octal band* — the number of octal digits — so "emergence" means
 "per order of magnitude in base 8".
 
+## Octal wheel vs hex wheel — the comparative experiment
+
+**[`docs/octal-vs-hex.md`](docs/octal-vs-hex.md)** answers the project's headline
+question directly: *what is the geometric pattern of prime locations in octal, how does
+it compare to hexadecimal, and what does the delta show?* It ships with a **GPU-free CPU
+companion** ([`src/cpu_survey.cpp`](src/cpu_survey.cpp)) so the comparison runs anywhere.
+
+The pattern is a **modular wheel**: a number sits on spoke `n mod b`, and a prime can
+only land on a spoke coprime to the base — the "prime corridors." Octal shows 4 corridors
+(spokes 1,3,5,7); hex shows 8. The **delta is pure resolution**: because 16 = 2·8, every
+octal corridor splits 50/50 into two hex corridors on one extra bit — *the hex wheel is
+the octal wheel at 2× zoom, with no new prime information.* Both stick at φ(b)/b = 50%
+admissible density, because **a power-of-2 base only ever screens the prime 2.** The real
+geometric leverage is in **primorial** bases (6, 30, 210, …) — which is exactly what the
+octal *multi-digit* predictor below reconstructs (base 210). Figures:
+[rays](docs/fig-rays.svg) · [dyadic refinement](docs/fig-refinement.svg) ·
+[Chebyshev tilt](docs/fig-chebyshev.svg). Verified to N = 10¹⁰ (π(N) = 455,052,511 ✓).
+
 ## The octal machinery
 
 Base 8 admits exact divisibility identities, analogous to decimal digit-sum tricks:
@@ -76,6 +94,14 @@ Direct use:
 
 K = 12 needs ≈ 4 GiB of GPU memory and ≈ 4 GiB of host RAM for the bitmap.
 
+**No GPU?** The CPU companion needs only a C++17 host compiler and Python 3:
+
+```sh
+make cpu                       # builds bin/cpu_survey
+make cpu-run N=10000000000     # octal-vs-hex survey to 1e10 (~25 s, report + CSVs)
+make figures                   # renders docs/fig-*.svg from results/digits.csv
+```
+
 > **Blackwell + older nvcc note:** the Makefile embeds `compute_80` PTX only and lets
 > the driver JIT it for newer GPUs (e.g. an RTX 5090 with nvcc 12.0). First run after a
 > build pays a few seconds of JIT; the driver caches it.
@@ -130,7 +156,9 @@ src/post.h         CPU post-pass: gaps, twins, octal palindromic primes
 src/primality.h    deterministic Miller-Rabin (u64)
 src/main.cu        CLI: survey reports, CSVs, --judge
 src/test_main.cu   the full test suite (make test)
-docs/              sample reports (8^10 and 8^12)
+src/cpu_survey.cpp GPU-free octal-wheel vs hex-wheel comparative survey
+tools/visualize.py renders the prime-wheel figures (SVG, stdlib only)
+docs/              sample reports (8^10, 8^12, CPU 1e10) + octal-vs-hex.md + figures
 results/           generated reports + CSVs (gitignored)
 ```
 
