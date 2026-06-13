@@ -45,7 +45,10 @@ cpu-run: $(BIN)/cpu_survey
 figures:
 	python3 tools/visualize.py
 
+lattice:
+	python3 tools/lattice3d.py 16384
+
 clean:
 	rm -rf $(BIN)
 
-.PHONY: all test run cpu cpu-run figures clean
+.PHONY: all test run cpu cpu-run figures lattice clean

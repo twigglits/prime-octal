@@ -26,6 +26,15 @@ octal *multi-digit* predictor below reconstructs (base 210). Figures:
 [rays](docs/fig-rays.svg) · [dyadic refinement](docs/fig-refinement.svg) ·
 [Chebyshev tilt](docs/fig-chebyshev.svg). Verified to N = 10¹⁰ (π(N) = 455,052,511 ✓).
 
+**[`docs/lattice-3d.md`](docs/lattice-3d.md)** lifts the wheel into 3D: the digit on one
+axis, **order of magnitude up the z-axis**, primes as a point cloud
+([octal](docs/cloud-octal.ply) / [hex](docs/cloud-hex.ply) `.ply`, spin them in
+MeshLab/Blender). The finding: the *composites* form a periodic crystal of divisibility
+diagonals (verified period 210); **primes are the aperiodic vacancies in it**. Octal→hex
+doubles every plane and lattice slope (`slope_hex = 2·slope_oct mod p`) — same ×2 delta;
+a primorial width (30) snaps the crystal into a clean tile while powers of two can only
+shear it. Built with `make lattice`.
+
 ## The octal machinery
 
 Base 8 admits exact divisibility identities, analogous to decimal digit-sum tricks:
