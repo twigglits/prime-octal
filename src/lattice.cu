@@ -420,6 +420,103 @@ static MoatResult emoat_gpu(double K, long long R, bool verbose) {
     return {farthest, reached_boundary, size};
 }
 
+// ===========================================================================
+// NEAREST-NEIGHBOUR GAP STATISTICS (council's next step: a falsifiable empirical
+// law, not a record radius). For both lattices we build a full-plane prime
+// bitmap, find every prime's nearest prime neighbour, and compare the observed
+// NN-distance distribution to the random (Poisson) model exp(-lambda*pi*r^2),
+// whose mean NN distance is 1/(2*sqrt(lambda)) at density lambda. Deviation
+// from Poisson is the structure the moat is the extreme tail of.
+
+__device__ __forceinline__ bool dev_gprime(long long a, long long b, const uint64_t* s) {
+    long long A = a < 0 ? -a : a, B = b < 0 ? -b : b;
+    if (A == 0 && B == 0) return false;
+    if (A == 0 || B == 0) { u64 m = A + B; return dev_isrp(m, s) && (m % 4 == 3); }
+    return dev_isrp((u64)A * A + (u64)B * B, s);
+}
+
+// One kernel, both lattices, full-plane offset grid (used by the gap tool).
+__global__ void mark_lattice(uint64_t* gbm, const uint64_t* rs, long long OFF, long long side, u64 R2, int eis) {
+    u64 t = (u64)blockIdx.x * blockDim.x + threadIdx.x;
+    if (t >= (u64)side * side) return;
+    long long a = (long long)(t / side) - OFF, b = (long long)(t % side) - OFF;
+    u64 N = eis ? (u64)(a * a - a * b + b * b) : (u64)(a * a + b * b);
+    if (N > R2) return;
+    bool p = eis ? dev_eprime(a, b, rs) : dev_gprime(a, b, rs);
+    if (p) atomicOr((unsigned long long*)&gbm[t >> 6], 1ULL << (t & 63));
+}
+
+static std::vector<uint64_t> lattice_bitmap(long long R, bool eis, long long OFF, long long side) {
+    u64 Nmax = (u64)R * R, span = (u64)side * side; size_t words = (span + 63) / 64;
+    std::vector<uint64_t> rs = odd_sieve(Nmax), gbm(words);
+    uint64_t *d_rs, *d_gbm;
+    CUDA_OK(cudaMalloc(&d_rs, rs.size() * 8));
+    CUDA_OK(cudaMemcpy(d_rs, rs.data(), rs.size() * 8, cudaMemcpyHostToDevice));
+    CUDA_OK(cudaMalloc(&d_gbm, words * 8));
+    CUDA_OK(cudaMemset(d_gbm, 0, words * 8));
+    int tpb = 256; u64 blocks = (span + tpb - 1) / tpb;
+    mark_lattice<<<(unsigned)blocks, tpb>>>(d_gbm, d_rs, OFF, side, Nmax, eis ? 1 : 0);
+    CUDA_OK(cudaGetLastError()); CUDA_OK(cudaDeviceSynchronize());
+    CUDA_OK(cudaMemcpy(gbm.data(), d_gbm, words * 8, cudaMemcpyDeviceToHost));
+    CUDA_OK(cudaFree(d_rs)); CUDA_OK(cudaFree(d_gbm));
+    return gbm;
+}
+
+struct GapStats { double obs_mean, poisson_mean, max_gap; long long count, isolated; };
+
+static GapStats gap_stats(bool eis, long long R, bool verbose) {
+    const long long OFF = eis ? (long long)(1.1547 * R) + 2 : R + 2, side = 2 * OFF + 1;
+    std::vector<uint64_t> gbm = lattice_bitmap(R, eis, OFF, side);
+    auto isP = [&](long long a, long long b) -> bool {
+        if (a < -OFF || a > OFF || b < -OFF || b > OFF) return false;
+        u64 t = (u64)(a + OFF) * side + (b + OFF); return (gbm[t >> 6] >> (t & 63)) & 1ULL;
+    };
+    auto dist = [&](long long dx, long long dy) {
+        return sqrt((double)(eis ? dx * dx - dx * dy + dy * dy : dx * dx + dy * dy));
+    };
+    const long long margin = 8;
+    const u64 Rin2 = (u64)(R - margin) * (R - margin);
+    const int NB = 40; const double binw = 0.25;
+    std::vector<long long> hist(NB, 0);
+    double sum = 0, maxg = 0; long long cnt = 0, isolated = 0;
+    for (long long a = -OFF; a <= OFF; ++a)
+        for (long long b = -OFF; b <= OFF; ++b) {
+            u64 N = eis ? (u64)(a * a - a * b + b * b) : (u64)(a * a + b * b);
+            if (N > Rin2 || !isP(a, b)) continue;
+            double best = 1e18;
+            for (long long d = 1; d <= 64; ++d) {
+                for (long long dx = -d; dx <= d; ++dx)
+                    for (long long dy = -d; dy <= d; ++dy) {
+                        if (std::max(dx < 0 ? -dx : dx, dy < 0 ? -dy : dy) != d) continue;  // ring only
+                        if (!isP(a + dx, b + dy)) continue;
+                        double dd = dist(dx, dy);
+                        if (dd < best) best = dd;
+                    }
+                if (best <= (double)d) break;   // unscanned cells are all farther than best
+            }
+            if (best > 1e17) { ++isolated; continue; }
+            sum += best; ++cnt; if (best > maxg) maxg = best;
+            int bi = (int)(best / binw); if (bi >= NB) bi = NB - 1; ++hist[bi];
+        }
+    double area = M_PI * (double)Rin2;
+    double lambda = cnt / area;
+    GapStats g{ sum / cnt, 1.0 / (2 * sqrt(lambda)), maxg, cnt, isolated };
+    if (verbose) {
+        printf("Nearest-neighbour gaps, %s, R=%lld: %lld primes (disk r<=%lld), %lld isolated (>64)\n",
+               eis ? "Z[w]" : "Z[i]", R, cnt, R - margin, isolated);
+        printf("  density lambda = %.4g /unit^2\n", lambda);
+        printf("  observed mean NN distance = %.4f\n", g.obs_mean);
+        printf("  Poisson  mean NN distance = %.4f   (ratio obs/Poisson = %.3f)\n",
+               g.poisson_mean, g.obs_mean / g.poisson_mean);
+        printf("  max NN gap = %.4f\n", g.max_gap);
+        double peak = 0; for (int k = 0; k < NB; ++k) peak = std::max(peak, (double)hist[k]);
+        for (int k = 0; k < NB && k * binw <= maxg + binw; ++k)
+            printf("  d<%4.2f %9lld %s\n", (k + 1) * binw, hist[k],
+                   std::string((int)(hist[k] * 50 / (peak + 1)), '#').c_str());
+    }
+    return g;
+}
+
 // --- self-test (red->green gate) -------------------------------------------
 static int selftest() {
     // classification against hand-computed truth
@@ -469,8 +566,14 @@ static int selftest() {
         assert(fabs(cpu.farthest - gpu.farthest) < 1e-6 && "Eisenstein GPU bitmap disagrees with CPU BFS");
     }
 
-    printf("selftest OK  (Z[i]: chi^2=%.3f, step-2 |z|=%.2f, GPU==CPU | Z[w]: chi^2=%.3f, GPU==CPU moat)\n",
-           chi2, m.farthest, echi2);
+    // Gap stats: NN distances are real, minimum ~1, and primes are found in both lattices.
+    GapStats gi = gap_stats(false, 300, false), gw = gap_stats(true, 300, false);
+    assert(gi.count > 0 && gw.count > 0 && "no primes found in gap scan");
+    assert(gi.obs_mean >= 1.0 && gi.obs_mean < 5.0 && "Z[i] NN mean implausible");
+    assert(gw.obs_mean >= 1.0 && gw.obs_mean < 5.0 && "Z[w] NN mean implausible");
+
+    printf("selftest OK  (Z[i]: chi^2=%.3f, step-2 |z|=%.2f, GPU==CPU, NN=%.2f | Z[w]: chi^2=%.3f, GPU==CPU, NN=%.2f)\n",
+           chi2, m.farthest, gi.obs_mean, echi2, gw.obs_mean);
     return 0;
 }
 
@@ -508,6 +611,12 @@ int main(int argc, char** argv) {
         emoat_gpu(K, R, true);
         return 0;
     }
+    if (argc >= 4 && !strcmp(argv[1], "--gaps")) {
+        bool eis = !strcmp(argv[2], "w") || !strcmp(argv[2], "eisenstein");
+        long long R = atoll(argv[3]);
+        gap_stats(eis, R, true);
+        return 0;
+    }
     fprintf(stderr,
         "usage:\n"
         "  %s --selftest\n"
@@ -518,7 +627,9 @@ int main(int argc, char** argv) {
         "  Eisenstein Z[w] (hexagonal lattice):\n"
         "  %s --ehecke R [bins]    angle equidistribution of Eisenstein primes\n"
         "  %s --emoat  K R         Eisenstein moat walk (CPU)\n"
-        "  %s --emoat-gpu K R      same, GPU disk-sieve bitmap\n",
-        argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
+        "  %s --emoat-gpu K R      same, GPU disk-sieve bitmap\n"
+        "  Statistics:\n"
+        "  %s --gaps i|w R         nearest-neighbour gap distribution vs the random model\n",
+        argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
     return 1;
 }
