@@ -344,10 +344,51 @@ not a loose end.
 
 Reproduce: `./bin/lattice --sigma i|w R [seeds]`.
 
+## Appendix G: Hecke-angle sector variance (exploratory)
+
+The Rudnick–Waxman / Kurlberg–Rudnick object: fold prime angles into the rotational
+fundamental domain `[0, 2π/u)` (u = unit order, 4 for ℤ[i], 6 for ℤ[ω]) and measure the
+variance of prime counts across K equal angular sectors — the index of dispersion
+`Ψ = Var(N_k)/mean(N_k)` (Poisson ⇒ 1). A matched-density random lattice subset is the
+baseline. `--formfactor i|w R` sweeps K. At R=6000:
+
+| K | ℤ[i] Ψ_prime | Ψ_random | ratio | ℤ[ω] Ψ_prime | Ψ_random | ratio |
+|------|------|------|------|------|------|------|
+| 30   | 0.64 | 1.28 | 0.50 | 0.95 | 1.72 | 0.55 |
+| 120  | 1.15 | 1.25 | 0.91 | 1.79 | 1.62 | 1.11 |
+| 720  | 1.73 | 1.23 | 1.41 | 2.92 | 1.59 | 1.84 |
+| 2520 | 2.48 | 1.27 | 1.95 | 3.89 | 1.53 | 2.54 |
+
+**Qualitative finding (robust):** in *both* rings the prime/random ratio rises monotonically
+through 1 (crossover near K≈120) — prime angles are **more uniform than a random lattice
+subset at coarse angular scales (rigidity)** and **more clustered at fine scales (excess
+variance)**. The u=4 and u=6 lattices behave the same way, suggesting the transition is
+universal across the two rings.
+
+**Caveats (why this is exploratory, not a clean claim):**
+1. *The random baseline is not Poisson.* Ψ_random ≈ 1.25 (ℤ[i]) / 1.6 (ℤ[ω]), roughly
+   K-independent — it carries the lattice's intrinsic angular granularity. That is *why* it is
+   the right control, but it means "Ψ_prime vs 1" is not the signal; "Ψ_prime vs Ψ_random" is.
+2. *ℤ[i] vs ℤ[ω] at equal K is apples-to-oranges* (the same mistake the pcf made). The
+   fundamental domains differ (π/2 vs π/3), so equal K means different sector *width*. The
+   quantitative cross-ring gap in this table is therefore **not** meaningful; a fair comparison
+   needs matched angular width or matched primes-per-sector. The shared *qualitative* transition
+   is what survives.
+3. The fine-K excess could carry residual discrete-lattice angular structure not fully removed
+   by the random control. A definitive form factor would compare against the Hecke L-function
+   prediction (matched resolution, thin norm shells) — genuinely future work.
+
+So: a real, reproducible scale-dependent angular form factor with the same shape in both rings,
+reported with its caveats. Unlike the singular series (Appendix F, definitive), this one is an
+exploratory measurement, not a closed result.
+
+Reproduce: `./bin/lattice --formfactor i|w R`.
+
 ### Parked
 
-The √36 column-sweep moat and the Eisenstein Hecke-angle form factor are the two open
-directions; neither is a loose end. The two-point story is closed: it is 𝔖.
+Open directions, none a loose end: the √36 column-sweep moat; a matched-resolution /
+L-function form-factor comparison to firm up Appendix G. The two-point story is closed (it
+is the singular series, Appendix F).
 
 ### Why this is the *right* place to look
 

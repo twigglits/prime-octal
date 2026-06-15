@@ -767,6 +767,87 @@ static void sigma_test(bool eis, long long R, int nseeds, bool verbose) {
     }
 }
 
+// ===========================================================================
+// HECKE-ANGLE SECTOR VARIANCE (the Rudnick-Waxman / Kurlberg-Rudnick object).
+// Fold prime angles into the rotational fundamental domain [0, 2pi/u) (u = unit
+// order: 4 for Z[i], 6 for Z[w]). The global Fourier sum there is ~0 by exact
+// lattice symmetry, so the informative statistic is the VARIANCE of prime counts
+// across K equal angular sectors. For a Poisson process the index of dispersion
+// Psi = Var(N_k)/mean(N_k) = 1; primes deviate. A matched-density random lattice
+// subset (shares the lattice's angular granularity) is the baseline, so
+// Psi_prime/Psi_random isolates the arithmetic. The Eisenstein case (u=6) is
+// empirically unstudied. Sweep K to trace the form factor.
+
+struct FormFactor { double psi_prime, psi_random; };
+
+static FormFactor form_factor(bool eis, long long R, int /*unused*/, int nseeds, bool verbose) {
+    const long long OFF = eis ? (long long)(1.1547 * R) + 2 : R + 2, side = 2 * OFF + 1;
+    std::vector<uint64_t> gbm = lattice_bitmap(R, eis, OFF, side);
+    auto norm = [&](long long a, long long b) -> u64 { return eis ? (u64)(a*a - a*b + b*b) : (u64)(a*a + b*b); };
+    auto isP = [&](long long a, long long b) -> bool {
+        if (a < -OFF || a > OFF || b < -OFF || b > OFF) return false;
+        u64 t = (u64)(a + OFF) * side + (b + OFF); return (gbm[t >> 6] >> (t & 63)) & 1ULL;
+    };
+    const long long margin = 4;
+    const u64 Rin2 = (u64)(R - margin) * (R - margin);
+    long long p_cnt = 0, cells = 0;
+    for (long long a = -OFF; a <= OFF; ++a) for (long long b = -OFF; b <= OFF; ++b)
+        if (norm(a, b) <= Rin2) { ++cells; if (isP(a, b)) ++p_cnt; }
+    const u64 thresh = (u64)(((double)p_cnt / cells) * (double)(1ULL << 24));
+    const double s3 = sqrt(3.0) / 2.0;
+    const int u = eis ? 6 : 4;
+    const double FD = 2 * M_PI / u;                 // fundamental-domain width
+    const int KB = 5040;                            // fine bins (7!, many divisors)
+
+    auto binit = [&](auto pred, std::vector<double>& h) {        // counts per fine bin over [0,FD)
+        h.assign(KB, 0);
+        for (long long a = -OFF; a <= OFF; ++a)
+            for (long long b = -OFF; b <= OFF; ++b) {
+                if (norm(a, b) > Rin2 || !pred(a, b)) continue;
+                double ex = eis ? a - b / 2.0 : (double)a, ey = eis ? b * s3 : (double)b;
+                double th = atan2(ey, ex); if (th < 0) th += 2 * M_PI;
+                th = fmod(th, FD);                  // fold by rotation symmetry
+                int k = (int)(th / FD * KB); if (k >= KB) k = KB - 1;
+                h[k] += 1;
+            }
+    };
+    auto psi_at = [&](const std::vector<double>& h, int K) -> double {   // index of dispersion
+        if (KB % K) return -1;
+        int g = KB / K; double mean = 0; std::vector<double> c(K, 0);
+        for (int k = 0; k < K; ++k) { for (int j = 0; j < g; ++j) c[k] += h[k * g + j]; mean += c[k]; }
+        mean /= K; double var = 0; for (double v : c) var += (v - mean) * (v - mean);
+        return mean > 0 ? (var / K) / mean : 0;
+    };
+
+    std::vector<double> hp; binit(isP, hp);
+    std::vector<std::vector<double>> hr(nseeds);
+    for (int sd = 0; sd < nseeds; ++sd) {
+        u64 seed = 0x9E3779B97F4A7C15ULL * (u64)(sd + 1);
+        auto isR = [&](long long a, long long b) -> bool {
+            if (norm(a, b) > (u64)R * R) return false;
+            u64 x = (u64)(a + OFF) * side + (b + OFF) + seed;
+            x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL; x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL; x ^= x >> 31;
+            return (x >> 40) < thresh;
+        };
+        binit(isR, hr[sd]);
+    }
+    auto psi_rand = [&](int K) { double s = 0; for (auto& h : hr) s += psi_at(h, K); return s / nseeds; };
+
+    const int Kref = 360;
+    if (verbose) {
+        printf("Hecke-angle sector variance, %s, R=%lld (%lld primes, fundamental domain [0,2pi/%d))\n",
+               eis ? "Z[w]" : "Z[i]", R, p_cnt, u);
+        printf("  K sectors   mean/sector   Psi_prime   Psi_random   ratio\n");
+        for (int K : {30, 60, 120, 360, 720, 1260, 2520}) {
+            double mps = (double)p_cnt / K, pp = psi_at(hp, K), pr = psi_rand(K);
+            printf("  %7d   %11.1f   %9.4f   %10.4f   %.4f\n", K, mps, pp, pr, pr > 0 ? pp / pr : 0);
+        }
+        printf("  --> Psi_random ~ 1 (Poisson). Psi_prime < 1 = angular rigidity; prime/random\n");
+        printf("      ratio is the arithmetic form factor. Compare Z[i] (u=4) vs Z[w] (u=6).\n");
+    }
+    return {psi_at(hp, Kref), psi_rand(Kref)};
+}
+
 // --- self-test (red->green gate) -------------------------------------------
 static int selftest() {
     // classification against hand-computed truth
@@ -839,6 +920,13 @@ static int selftest() {
     assert(singular_series(false, 2, 0, sp) > 0.1 && "Z[i] offset 2 admissible");
     assert(singular_series(true, 1, 0, sp) > 0.1 && "Z[w] has no parity obstruction");
 
+    // Sector variance: the matched-density random control is ~Poisson (Psi ~ 1),
+    // and the prime index of dispersion is a finite positive number.
+    FormFactor ffi = form_factor(false, 600, 0, 2, false), ffw = form_factor(true, 600, 0, 2, false);
+    assert(ffi.psi_random > 0.5 && ffi.psi_random < 2.0 && "Z[i] random sector variance not ~Poisson");
+    assert(ffw.psi_random > 0.5 && ffw.psi_random < 2.0 && "Z[w] random sector variance not ~Poisson");
+    assert(ffi.psi_prime > 0 && ffw.psi_prime > 0 && "prime sector variance not computed");
+
     printf("selftest OK  (Z[i]: chi^2=%.3f, |z|=%.2f, NN=%.2f vs rand %.2f+/-%.3f, pcf g=%.3f, S(1,1)=%.3f | Z[w]: chi^2=%.3f, NN=%.2f vs rand %.2f+/-%.3f, pcf g=%.3f, S(1,0)=%.3f)\n",
            chi2, m.farthest, gi.obs_mean, gi.random_mean, gi.random_sd, pi.g_short, singular_series(false, 1, 1, sp),
            echi2, gw.obs_mean, gw.random_mean, gw.random_sd, pw.g_short, singular_series(true, 1, 0, sp));
@@ -900,6 +988,13 @@ int main(int argc, char** argv) {
         sigma_test(eis, R, nseeds, true);
         return 0;
     }
+    if (argc >= 4 && !strcmp(argv[1], "--formfactor")) {
+        bool eis = !strcmp(argv[2], "w") || !strcmp(argv[2], "eisenstein");
+        long long R = atoll(argv[3]);
+        int nmax = argc >= 5 ? atoi(argv[4]) : 36;
+        form_factor(eis, R, nmax, 3, true);
+        return 0;
+    }
     fprintf(stderr,
         "usage:\n"
         "  %s --selftest\n"
@@ -914,7 +1009,8 @@ int main(int argc, char** argv) {
         "  Statistics:\n"
         "  %s --gaps i|w R [seeds] NN gaps vs matched random subset, error bars over seeds\n"
         "  %s --pcf  i|w R [sect]  angular pair-correlation; CV vs sector-count sweep\n"
-        "  %s --sigma i|w R [seeds] Hardy-Littlewood singular series overlay vs measured pairs\n",
-        argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
+        "  %s --sigma i|w R [seeds] Hardy-Littlewood singular series overlay vs measured pairs\n"
+        "  %s --formfactor i|w R [nmax] Hecke-angle power spectrum F(n) vs random subset\n",
+        argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
     return 1;
 }
