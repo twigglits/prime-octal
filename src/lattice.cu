@@ -226,7 +226,7 @@ static MoatResult moat_gpu(long long Ksq, long long R, bool verbose) {   // Ksq 
         auto [a, b] = q.front(); q.pop(); ++size;
         double r = sqrt((double)a * a + (double)b * b);
         if (r > farthest) farthest = r;
-        if (r > boundary) reached_boundary = true;
+        if (r > boundary) { reached_boundary = true; break; }   // escaped: inconclusive, stop early
         for (auto [dx, dy] : steps) {
             long long na = a + dx, nb = b + dy;
             long long A = na < 0 ? -na : na, B = nb < 0 ? -nb : nb;   // fold into quadrant
@@ -404,7 +404,7 @@ static MoatResult emoat_gpu(long long Ksq, long long R, bool verbose) {
         auto [a, b] = q.front(); q.pop(); ++size;
         double r = sqrt((double)eis_norm(a, b));
         if (r > farthest) farthest = r;
-        if (r > boundary) reached_boundary = true;
+        if (r > boundary) { reached_boundary = true; break; }   // escaped: inconclusive, stop early
         for (auto [dx, dy] : steps) {
             long long na = a + dx, nb = b + dy;
             if (!gp(na, nb)) continue;
