@@ -848,6 +848,84 @@ static FormFactor form_factor(bool eis, long long R, int /*unused*/, int nseeds,
     return {psi_at(hp, Kref), psi_rand(Kref)};
 }
 
+// Matched-resolution form factor (council recipe). Fixes the three flaws of the
+// exploratory version: (1) THIN NORM SHELL [ (R/2)^2, R^2 ] instead of the full
+// disk (full disk averages over radii / scales). (2) x-axis = lambda = mean
+// primes per sector, so the differing fundamental-domain widths (pi/2 vs pi/3)
+// are absorbed and Z[i]/Z[w] are directly comparable. (3) the control is a
+// matched-density Bernoulli subset of ALL lattice integers IN THE SHELL — it
+// shares the prime set's exact angular "ray comb", so bin-edge aliasing cancels
+// in the difference D = Psi_prime - Psi_control. D vs lambda is the arithmetic
+// form factor; D ~ 0 means the angular structure is pure lattice geometry.
+static double form_factor_matched(bool eis, long long R, int nseeds, bool verbose) {   // returns coarse Psi_prime
+    const long long OFF = eis ? (long long)(1.1547 * R) + 2 : R + 2, side = 2 * OFF + 1;
+    std::vector<uint64_t> gbm = lattice_bitmap(R, eis, OFF, side);
+    auto norm = [&](long long a, long long b) -> u64 { return eis ? (u64)(a*a - a*b + b*b) : (u64)(a*a + b*b); };
+    auto isP = [&](long long a, long long b) -> bool {
+        if (a < -OFF || a > OFF || b < -OFF || b > OFF) return false;
+        u64 t = (u64)(a + OFF) * side + (b + OFF); return (gbm[t >> 6] >> (t & 63)) & 1ULL;
+    };
+    const u64 Nlo = (u64)(R / 2) * (R / 2), Nhi = (u64)(R - 4) * (R - 4);   // thin shell in norm
+    auto inshell = [&](long long a, long long b) { u64 n = norm(a, b); return n > Nlo && n <= Nhi; };
+    long long p_cnt = 0, cells = 0;
+    for (long long a = -OFF; a <= OFF; ++a) for (long long b = -OFF; b <= OFF; ++b)
+        if (inshell(a, b)) { ++cells; if (isP(a, b)) ++p_cnt; }
+    const u64 thresh = (u64)(((double)p_cnt / cells) * (double)(1ULL << 24));
+    const double s3 = sqrt(3.0) / 2.0;
+    const int u = eis ? 6 : 4;
+    const double FD = 2 * M_PI / u;
+    const int KB = 720720;                          // 2^4*3^2*5*7*11*13: many divisors
+
+    auto binit = [&](auto pred, std::vector<double>& h) {
+        h.assign(KB, 0);
+        for (long long a = -OFF; a <= OFF; ++a)
+            for (long long b = -OFF; b <= OFF; ++b) {
+                if (!inshell(a, b) || !pred(a, b)) continue;
+                double ex = eis ? a - b / 2.0 : (double)a, ey = eis ? b * s3 : (double)b;
+                double th = atan2(ey, ex); if (th < 0) th += 2 * M_PI;
+                if (th >= FD) continue;             // RESTRICT to one fundamental sector, do NOT fold:
+                                                    // folding piles all u unit-associates onto one angle,
+                                                    // inflating the dispersion index by exactly u.
+                int k = (int)(th / FD * KB); if (k >= KB) k = KB - 1;
+                h[k] += 1;
+            }
+    };
+    auto psi_at = [&](const std::vector<double>& h, int K) -> double {
+        int g = KB / K; double mean = 0; std::vector<double> c(K, 0);
+        for (int k = 0; k < K; ++k) { for (int j = 0; j < g; ++j) c[k] += h[k * g + j]; mean += c[k]; }
+        mean /= K; double var = 0; for (double v : c) var += (v - mean) * (v - mean);
+        return mean > 0 ? (var / K) / mean : 0;
+    };
+
+    std::vector<double> hp; binit(isP, hp);
+    double p_sec = 0; for (double v : hp) p_sec += v;     // primes in the fundamental sector
+    std::vector<std::vector<double>> hr(nseeds);
+    for (int sd = 0; sd < nseeds; ++sd) {
+        u64 seed = 0x9E3779B97F4A7C15ULL * (u64)(sd + 1);
+        auto isR = [&](long long a, long long b) -> bool {
+            u64 x = (u64)(a + OFF) * side + (b + OFF) + seed;
+            x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL; x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL; x ^= x >> 31;
+            return (x >> 40) < thresh;
+        };
+        binit(isR, hr[sd]);
+    }
+    auto psi_ctrl = [&](int K) { double s = 0; for (auto& h : hr) s += psi_at(h, K); return s / nseeds; };
+
+    if (verbose) {
+        printf("Matched form factor, %s, R=%lld, shell norm (%llu,%llu], %.0f primes in sector [0,2pi/%d)\n",
+               eis ? "Z[w]" : "Z[i]", R, (unsigned long long)Nlo, (unsigned long long)Nhi, p_sec, u);
+        printf("  lambda(primes/sector)   Psi_prime   Psi_control   D=prime-control\n");
+        for (int g : {1430, 143, 26, 5, 1}) {        // K = KB/g (exact divisors)
+            int K = KB / g; double lam = p_sec / K;
+            double pp = psi_at(hp, K), pc = psi_ctrl(K);
+            printf("  %18.2f   %9.4f   %11.4f   %+0.4f\n", lam, pp, pc, pp - pc);
+        }
+        printf("  --> x-axis lambda makes Z[i] (u=4) and Z[w] (u=6) comparable; the control\n");
+        printf("      shares the lattice ray-comb so D isolates the arithmetic (Hecke) part.\n");
+    }
+    return psi_at(hp, KB / 1430);          // Psi_prime at the coarsest sector count
+}
+
 // --- self-test (red->green gate) -------------------------------------------
 static int selftest() {
     // classification against hand-computed truth
@@ -927,6 +1005,12 @@ static int selftest() {
     assert(ffw.psi_random > 0.5 && ffw.psi_random < 2.0 && "Z[w] random sector variance not ~Poisson");
     assert(ffi.psi_prime > 0 && ffw.psi_prime > 0 && "prime sector variance not computed");
 
+    // Matched form factor: coarse-scale Psi_prime is sub-Poisson (<~1.3). If the
+    // fundamental-sector restriction regresses to folding, this jumps to ~u (4 or 6).
+    double mi = form_factor_matched(false, 700, 2, false), mw = form_factor_matched(true, 700, 2, false);
+    assert(mi > 0 && mi < 1.5 && "Z[i] matched coarse Psi not sub-Poisson (folding artifact?)");
+    assert(mw > 0 && mw < 1.5 && "Z[w] matched coarse Psi not sub-Poisson (folding artifact?)");
+
     printf("selftest OK  (Z[i]: chi^2=%.3f, |z|=%.2f, NN=%.2f vs rand %.2f+/-%.3f, pcf g=%.3f, S(1,1)=%.3f | Z[w]: chi^2=%.3f, NN=%.2f vs rand %.2f+/-%.3f, pcf g=%.3f, S(1,0)=%.3f)\n",
            chi2, m.farthest, gi.obs_mean, gi.random_mean, gi.random_sd, pi.g_short, singular_series(false, 1, 1, sp),
            echi2, gw.obs_mean, gw.random_mean, gw.random_sd, pw.g_short, singular_series(true, 1, 0, sp));
@@ -995,6 +1079,13 @@ int main(int argc, char** argv) {
         form_factor(eis, R, nmax, 3, true);
         return 0;
     }
+    if (argc >= 4 && !strcmp(argv[1], "--ffmatched")) {
+        bool eis = !strcmp(argv[2], "w") || !strcmp(argv[2], "eisenstein");
+        long long R = atoll(argv[3]);
+        int nseeds = argc >= 5 ? atoi(argv[4]) : 4;
+        form_factor_matched(eis, R, nseeds, true);
+        return 0;
+    }
     fprintf(stderr,
         "usage:\n"
         "  %s --selftest\n"
@@ -1010,7 +1101,8 @@ int main(int argc, char** argv) {
         "  %s --gaps i|w R [seeds] NN gaps vs matched random subset, error bars over seeds\n"
         "  %s --pcf  i|w R [sect]  angular pair-correlation; CV vs sector-count sweep\n"
         "  %s --sigma i|w R [seeds] Hardy-Littlewood singular series overlay vs measured pairs\n"
-        "  %s --formfactor i|w R [nmax] Hecke-angle power spectrum F(n) vs random subset\n",
-        argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
+        "  %s --formfactor i|w R [nmax] Hecke-angle sector variance (exploratory, full disk)\n"
+        "  %s --ffmatched  i|w R [seeds] matched-resolution form factor (thin shell, lambda axis)\n",
+        argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
     return 1;
 }

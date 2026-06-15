@@ -384,11 +384,57 @@ exploratory measurement, not a closed result.
 
 Reproduce: `./bin/lattice --formfactor i|w R`.
 
+## Appendix H: matched-resolution form factor (and the folding artifact)
+
+A council pass (skip→method) replaced Appendix G's flawed comparison with three fixes:
+(1) a **thin norm shell** instead of the full disk (full disk averages over scales);
+(2) **x-axis = λ = mean primes per sector**, which absorbs the differing fundamental-domain
+widths (π/2 vs π/3) so ℤ[i] and ℤ[ω] are directly comparable; (3) the control is a
+matched-density Bernoulli subset of **all lattice integers in the shell**, sharing the prime
+set's angular "ray comb" so binning aliasing cancels. `--ffmatched i|w R`.
+
+**An artifact caught mid-flight.** The first matched run gave Ψ_prime saturating at ≈3.9 (u=4)
+and ≈5.8 (u=6) — suspiciously ≈ u. The cause: folding angles with `fmod` into `[0,2π/u)` piles
+all *u* unit-associates of each prime ideal onto the *same* angle, inflating the dispersion
+index by exactly u. Fix: **restrict to one fundamental sector** (each ideal counted once)
+rather than fold. The selftest now gates on coarse Ψ_prime < 1.5 to catch any regression.
+
+**Result (R=5000, corrected).** In-sector prime counts match to 0.02% (1,134,662 vs 1,134,924),
+so the two rings are compared at genuinely equal λ:
+
+| λ (primes/sector) | ℤ[i] Ψ_prime | ℤ[ω] Ψ_prime |
+|-------------------|--------------|--------------|
+| 2251 | 0.485 | 0.565 |
+| 225  | 0.827 | 0.795 |
+| 41   | 0.983 | 0.952 |
+| 7.9  | 0.982 | 0.973 |
+| 1.6  | 0.979 | 0.975 |
+
+Two findings:
+
+1. **Number-variance suppression (rigidity → Poisson).** Ψ_prime is strongly **sub-Poisson**
+   (≈0.5) at coarse angular resolution (large λ) and relaxes to Poisson (Ψ→1) as λ→O(1) — the
+   Rudnick–Waxman / CUE picture: prime angles are *more ordered than random* at large scales,
+   washing out to shot noise at the finest scales.
+2. **Universality across the rings.** The ℤ[i] (u=4) and ℤ[ω] (u=6) curves **collapse** onto
+   one another at matched λ (within a few %). The Eisenstein angular form factor — empirically
+   unstudied — behaves like the Gaussian one. That collapse is the novel result.
+
+**Honest limits.** The shell is a factor-4 norm window (not strictly dyadic); the control is
+Bernoulli (random) not a deterministic same-support set, so the small Ψ_prime−Ψ_control
+residual is suggestive, not definitive; and no error bars / CUE-curve overlay yet. The robust,
+defensible claims are the *shape* (sub-Poisson→Poisson) and the *cross-ring collapse* — not a
+quantitative CUE fit. Catching the u-fold folding artifact is itself the main lesson:
+fundamental-domain folding silently multiplies the variance by the unit order.
+
+Reproduce: `./bin/lattice --ffmatched i|w R`.
+
 ### Parked
 
-Open directions, none a loose end: the √36 column-sweep moat; a matched-resolution /
-L-function form-factor comparison to firm up Appendix G. The two-point story is closed (it
-is the singular series, Appendix F).
+Two open directions, neither a loose end: the √36 column-sweep moat; and a definitive form
+factor (dyadic shell + deterministic control + bootstrap error bars + CUE-curve overlay) to
+turn Appendix H's universality from qualitative collapse into a quantitative fit. The two-point
+story is closed (the singular series, Appendix F).
 
 ### Why this is the *right* place to look
 
