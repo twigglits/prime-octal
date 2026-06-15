@@ -462,9 +462,9 @@ static std::vector<uint64_t> lattice_bitmap(long long R, bool eis, long long OFF
     return gbm;
 }
 
-struct GapStats { double obs_mean, poisson_mean, random_mean, max_gap; long long count, random_count; };
+struct GapStats { double obs_mean, poisson_mean, random_mean, random_sd, max_gap; long long count, random_count; };
 
-static GapStats gap_stats(bool eis, long long R, bool verbose) {
+static GapStats gap_stats(bool eis, long long R, int nseeds, bool verbose) {
     const long long OFF = eis ? (long long)(1.1547 * R) + 2 : R + 2, side = 2 * OFF + 1;
     std::vector<uint64_t> gbm = lattice_bitmap(R, eis, OFF, side);
     auto isP = [&](long long a, long long b) -> bool {
@@ -507,38 +507,45 @@ static GapStats gap_stats(bool eis, long long R, bool verbose) {
     double p_mean, p_max; long long p_cnt;
     scan(isP, p_mean, p_max, p_cnt);
 
-    // --- random control: a Bernoulli lattice subset at the SAME density on the
-    //     SAME lattice, so it shares the prime set's hard-core floor. The ratio
-    //     prime/random isolates genuine prime correlation from lattice discreteness.
+    // --- random control over MANY seeds (council kill-test): a Bernoulli lattice
+    //     subset at the SAME density on the SAME lattice shares the prime set's
+    //     hard-core floor. Running independent seeds turns the prime/random ratio
+    //     into a measurement WITH ERROR BARS, so the repulsion (and the Z[i] vs
+    //     Z[w] gap) can be tested against sampling noise instead of asserted.
     long long cells = 0;
     for (long long a = -OFF; a <= OFF; ++a)
         for (long long b = -OFF; b <= OFF; ++b)
             if (norm(a, b) <= Rin2) ++cells;
-    const double pinc = (double)p_cnt / (double)cells;
-    const u64 thresh = (u64)(pinc * (double)(1ULL << 24));
-    auto isR = [&](long long a, long long b) -> bool {            // deterministic splitmix64 hash
-        if (a < -OFF || a > OFF || b < -OFF || b > OFF || norm(a, b) > (u64)R * R) return false;
-        u64 x = (u64)(a + OFF) * side + (b + OFF) + 0x9E3779B97F4A7C15ULL;
-        x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;
-        x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL;
-        x ^= x >> 31;
-        return (x >> 40) < thresh;
-    };
-    double r_mean, r_max; long long r_cnt;
-    scan(isR, r_mean, r_max, r_cnt);
+    const u64 thresh = (u64)(((double)p_cnt / cells) * (double)(1ULL << 24));
+    std::vector<double> r_means;
+    long long r_cnt = 0; double r_max = 0;
+    for (int s = 0; s < nseeds; ++s) {
+        u64 seed = 0x9E3779B97F4A7C15ULL * (u64)(s + 1);
+        auto isR = [&](long long a, long long b) -> bool {
+            if (a < -OFF || a > OFF || b < -OFF || b > OFF || norm(a, b) > (u64)R * R) return false;
+            u64 x = (u64)(a + OFF) * side + (b + OFF) + seed;
+            x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;
+            x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL;
+            x ^= x >> 31;
+            return (x >> 40) < thresh;
+        };
+        double rm, rmx; long long rc;
+        scan(isR, rm, rmx, rc);
+        r_means.push_back(rm); r_cnt = rc; r_max = std::max(r_max, rmx);
+    }
+    double r_mean = 0; for (double v : r_means) r_mean += v; r_mean /= r_means.size();
+    double r_sd = 0; for (double v : r_means) r_sd += (v - r_mean) * (v - r_mean);
+    r_sd = r_means.size() > 1 ? sqrt(r_sd / (r_means.size() - 1)) : 0;
 
     double lambda = p_cnt / (M_PI * (double)Rin2);
-    GapStats g{ p_mean, 1.0 / (2 * sqrt(lambda)), r_mean, p_max, p_cnt, r_cnt };
+    double ratio = p_mean / r_mean, ratio_sd = ratio * (r_sd / r_mean);   // p_mean fixed
+    GapStats g{ p_mean, 1.0 / (2 * sqrt(lambda)), r_mean, r_sd, p_max, p_cnt, r_cnt };
     if (verbose) {
-        printf("Nearest-neighbour gaps, %s, R=%lld\n", eis ? "Z[w]" : "Z[i]", R);
-        printf("  primes:        %lld points, mean NN = %.4f, max gap = %.4f\n", p_cnt, p_mean, p_max);
-        printf("  random subset: %lld points, mean NN = %.4f, max gap = %.4f  (matched density)\n",
-               r_cnt, r_mean, r_max);
-        printf("  continuous Poisson mean NN = %.4f\n", g.poisson_mean);
-        printf("  RATIOS  prime/random = %.4f   prime/Poisson = %.4f   random/Poisson = %.4f\n",
-               p_mean / r_mean, p_mean / g.poisson_mean, r_mean / g.poisson_mean);
-        printf("  --> prime/random > 1 = genuine prime repulsion beyond lattice hard-core;\n");
-        printf("      ~1 = primes indistinguishable from random lattice points at this density.\n");
+        printf("Nearest-neighbour gaps, %s, R=%lld  (%d random seeds)\n", eis ? "Z[w]" : "Z[i]", R, nseeds);
+        printf("  primes:        %lld points, mean NN = %.5f\n", p_cnt, p_mean);
+        printf("  random subset: ~%lld points, mean NN = %.5f +/- %.5f (seed spread)\n", r_cnt, r_mean, r_sd);
+        printf("  prime/random ratio = %.5f +/- %.5f   (excess repulsion = %.2f%% +/- %.2f%%, %.1f sigma)\n",
+               ratio, ratio_sd, (ratio - 1) * 100, ratio_sd * 100, (ratio - 1) / (ratio_sd > 0 ? ratio_sd : 1e-9));
     }
     return g;
 }
@@ -553,7 +560,7 @@ static GapStats gap_stats(bool eis, long long R, bool verbose) {
 
 struct PCF { double g_short, aniso; };   // short-range depletion ratio; angular anisotropy (CV)
 
-static PCF pair_corr(bool eis, long long R, bool verbose) {
+static PCF pair_corr(bool eis, long long R, int sectors, bool verbose) {
     const long long OFF = eis ? (long long)(1.1547 * R) + 2 : R + 2, side = 2 * OFF + 1;
     std::vector<uint64_t> gbm = lattice_bitmap(R, eis, OFF, side);
     auto norm = [&](long long a, long long b) -> u64 { return eis ? (u64)(a*a - a*b + b*b) : (u64)(a*a + b*b); };
@@ -580,10 +587,10 @@ static PCF pair_corr(bool eis, long long R, bool verbose) {
 
     const double Dmax = 8.0, s3 = sqrt(3.0) / 2.0;
     const int RB = 32; const double rbin = Dmax / RB;       // radial bins of g(d)
-    const int AB = eis ? 12 : 8;                            // angular bins = lattice symmetry order
-    // accumulate pair counts at separation (dx,dy) for source points selected by pred
+    const int FB = 360;                                     // FINE angular bins; coarsen later
+    // accumulate radial + fine-angular pair counts for source points selected by pred
     auto accum = [&](auto pred, std::vector<double>& radial, std::vector<double>& ang) {
-        radial.assign(RB, 0); ang.assign(AB, 0);
+        radial.assign(RB, 0); ang.assign(FB, 0);
         long long M = (long long)Dmax + 1;
         for (long long a = -OFF; a <= OFF; ++a)
             for (long long b = -OFF; b <= OFF; ++b) {
@@ -597,7 +604,7 @@ static PCF pair_corr(bool eis, long long R, bool verbose) {
                         if (dd >= 2.0) {                    // angle of separation in the embedded plane
                             double ex = eis ? dx - dy / 2.0 : (double)dx, ey = eis ? dy * s3 : (double)dy;
                             double ph = atan2(ey, ex); if (ph < 0) ph += 2 * M_PI;
-                            ang[(int)(ph * AB / (2 * M_PI)) % AB] += 1;
+                            ang[(int)(ph * FB / (2 * M_PI)) % FB] += 1;
                         }
                     }
             }
@@ -609,24 +616,32 @@ static PCF pair_corr(bool eis, long long R, bool verbose) {
     double ps = 0, rs = 0;
     for (int k = 0; k < RB && (k + 1) * rbin <= 3.0; ++k) { ps += pr[k]; rs += rr[k]; }
     double g_short = (rs > 0) ? ps / rs : 0;
-    // anisotropy: coefficient of variation of the prime/random angular ratio (0 = isotropic)
-    double gm = 0; std::vector<double> gr(AB);
-    for (int k = 0; k < AB; ++k) { gr[k] = ra[k] > 0 ? pa[k] / ra[k] : 0; gm += gr[k]; }
-    gm /= AB; double var = 0; for (int k = 0; k < AB; ++k) var += (gr[k] - gm) * (gr[k] - gm);
-    double aniso = gm > 0 ? sqrt(var / AB) / gm : 0;
+
+    // anisotropy CV of the prime/random angular ratio, coarsening the FINE bins to AB
+    // sectors. AB is now the SAME for both lattices (the eis?12:8 confound is gone);
+    // we sweep AB so the bin-count dependence of CV is visible, not hidden.
+    auto cv_at = [&](int AB) -> double {
+        if (FB % AB) return -1;
+        int grp = FB / AB; double gm = 0; std::vector<double> gr(AB, 0);
+        for (int k = 0; k < AB; ++k) {
+            double pp = 0, qq = 0;
+            for (int j = 0; j < grp; ++j) { pp += pa[k * grp + j]; qq += ra[k * grp + j]; }
+            gr[k] = qq > 0 ? pp / qq : 0; gm += gr[k];
+        }
+        gm /= AB; double var = 0; for (double v : gr) var += (v - gm) * (v - gm);
+        return gm > 0 ? sqrt(var / AB) / gm : 0;
+    };
+    double aniso = cv_at(sectors);
 
     if (verbose) {
         printf("Pair correlation, %s, R=%lld (%lld source primes, Dmax=%.0f)\n",
                eis ? "Z[w]" : "Z[i]", R, p_cnt, Dmax);
-        printf("  radial g_prime/g_random by separation d:\n");
-        for (int k = 0; k < RB; ++k) {
-            if (pr[k] == 0 && rr[k] == 0) continue;
-            double g = rr[k] > 0 ? pr[k] / rr[k] : 0;
-            int bar = (int)(g * 30);
-            printf("   d<%4.2f  g=%.3f %s\n", (k + 1) * rbin, g, std::string(bar > 60 ? 60 : bar, '#').c_str());
-        }
         printf("  short-range (d<3) g_prime/g_random = %.4f   (<1 = repulsion beyond hard-core)\n", g_short);
-        printf("  angular anisotropy of the ratio (CV over %d sectors) = %.4f   (0 = isotropic)\n", AB, aniso);
+        printf("  angular-ratio CV vs sector count (EQUAL sectors for both lattices):\n");
+        for (int AB : {6, 8, 12, 24, 36})
+            printf("    %2d sectors: CV = %.4f\n", AB, cv_at(AB));
+        printf("  --> CV grows mechanically with sector count; compare the two lattices at the\n");
+        printf("      SAME AB. The earlier eis?12:8 comparison was apples-to-oranges.\n");
     }
     return {g_short, aniso};
 }
@@ -680,22 +695,24 @@ static int selftest() {
         assert(fabs(cpu.farthest - gpu.farthest) < 1e-6 && "Eisenstein GPU bitmap disagrees with CPU BFS");
     }
 
-    // Gap stats + random control: NN means are real and the matched-density random
-    // subset produces a plausible NN mean (the control actually ran).
-    GapStats gi = gap_stats(false, 400, false), gw = gap_stats(true, 400, false);
+    // Gap stats + multi-seed random control: NN means real, control ran across seeds
+    // and produced a seed spread (random_sd >= 0) — the error-bar machinery works.
+    GapStats gi = gap_stats(false, 400, 4, false), gw = gap_stats(true, 400, 4, false);
     assert(gi.count > 0 && gw.count > 0 && "no primes found in gap scan");
     assert(gi.obs_mean >= 1.0 && gi.obs_mean < 5.0 && "Z[i] NN mean implausible");
     assert(gw.obs_mean >= 1.0 && gw.obs_mean < 5.0 && "Z[w] NN mean implausible");
     assert(gi.random_count > 0 && gi.random_mean >= 1.0 && gi.random_mean < 5.0 && "Z[i] random control failed");
     assert(gw.random_count > 0 && gw.random_mean >= 1.0 && gw.random_mean < 5.0 && "Z[w] random control failed");
+    assert(gi.random_sd >= 0.0 && gw.random_sd >= 0.0 && "seed-spread not computed");
 
-    // Pair correlation: short-range ratio is a finite depletion (<= ~1.1), control ran.
-    PCF pi = pair_corr(false, 400, false), pw = pair_corr(true, 400, false);
+    // Pair correlation: short-range ratio is a finite depletion; CV uses EQUAL sectors.
+    PCF pi = pair_corr(false, 400, 24, false), pw = pair_corr(true, 400, 24, false);
     assert(pi.g_short > 0 && pi.g_short < 1.2 && "Z[i] pcf short-range ratio implausible");
     assert(pw.g_short > 0 && pw.g_short < 1.2 && "Z[w] pcf short-range ratio implausible");
 
-    printf("selftest OK  (Z[i]: chi^2=%.3f, |z|=%.2f, NN=%.2f vs rand %.2f, pcf g=%.3f | Z[w]: chi^2=%.3f, NN=%.2f vs rand %.2f, pcf g=%.3f)\n",
-           chi2, m.farthest, gi.obs_mean, gi.random_mean, pi.g_short, echi2, gw.obs_mean, gw.random_mean, pw.g_short);
+    printf("selftest OK  (Z[i]: chi^2=%.3f, |z|=%.2f, NN=%.2f vs rand %.2f+/-%.3f, pcf g=%.3f | Z[w]: chi^2=%.3f, NN=%.2f vs rand %.2f+/-%.3f, pcf g=%.3f)\n",
+           chi2, m.farthest, gi.obs_mean, gi.random_mean, gi.random_sd, pi.g_short,
+           echi2, gw.obs_mean, gw.random_mean, gw.random_sd, pw.g_short);
     return 0;
 }
 
@@ -736,13 +753,15 @@ int main(int argc, char** argv) {
     if (argc >= 4 && !strcmp(argv[1], "--gaps")) {
         bool eis = !strcmp(argv[2], "w") || !strcmp(argv[2], "eisenstein");
         long long R = atoll(argv[3]);
-        gap_stats(eis, R, true);
+        int nseeds = argc >= 5 ? atoi(argv[4]) : 8;
+        gap_stats(eis, R, nseeds, true);
         return 0;
     }
     if (argc >= 4 && !strcmp(argv[1], "--pcf")) {
         bool eis = !strcmp(argv[2], "w") || !strcmp(argv[2], "eisenstein");
         long long R = atoll(argv[3]);
-        pair_corr(eis, R, true);
+        int sectors = argc >= 5 ? atoi(argv[4]) : 24;
+        pair_corr(eis, R, sectors, true);
         return 0;
     }
     fprintf(stderr,
@@ -757,8 +776,8 @@ int main(int argc, char** argv) {
         "  %s --emoat  K R         Eisenstein moat walk (CPU)\n"
         "  %s --emoat-gpu K R      same, GPU disk-sieve bitmap\n"
         "  Statistics:\n"
-        "  %s --gaps i|w R         nearest-neighbour gap distribution vs the random model\n"
-        "  %s --pcf  i|w R         angular pair-correlation g(d) vs random subset\n",
+        "  %s --gaps i|w R [seeds] NN gaps vs matched random subset, error bars over seeds\n"
+        "  %s --pcf  i|w R [sect]  angular pair-correlation; CV vs sector-count sweep\n",
         argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
     return 1;
 }

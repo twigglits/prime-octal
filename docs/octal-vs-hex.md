@@ -257,7 +257,26 @@ Two results, both of which **correct Appendix C**:
 This is exactly why the control matters: comparing to continuous Poisson made the two lattices
 look identical; comparing to a matched random lattice subset reveals they are not.
 
-Reproduce: `./bin/lattice --gaps i|w R` (now prints prime, random-control, and Poisson means).
+**Error bars (16 random seeds, R=8000).** The point sets are huge (>10⁷), so the seed-to-seed
+spread is tiny and the repulsion is overwhelmingly significant:
+
+| lattice | prime/random | excess | significance |
+|---------|--------------|--------|--------------|
+| ℤ[i] | 1.0859 ± 0.0002 | **8.59 %** | ~520 σ |
+| ℤ[ω] | 1.0557 ± 0.0002 | **5.57 %** | ~330 σ |
+
+The ~3-point ℤ[i] vs ℤ[ω] gap dwarfs the error bars — it is **not** sampling noise.
+
+**But robust ≠ anomalous.** The correct theoretical null is not a random subset at all but the
+**Hardy–Littlewood singular series 𝔖** for each ring (an Euler product over prime ideals, with
+ring-specific admissibility). Because 𝔖 differs between ℤ[i] and ℤ[ω] *by construction*, the
+measured prime/random ratio is essentially an empirical estimate of 𝔖 — so the 8.6 % vs 5.6 %
+gap is most likely the two rings' singular series differing, i.e. *definitional, not a new
+phenomenon*. Confirming that needs the 𝔖 overlay (`data/𝔖`, expected ≈ 1); until then the
+honest statement is: **a real, high-significance difference whose arithmetic explanation is the
+expected singular series, not a surprise.**
+
+Reproduce: `./bin/lattice --gaps i|w R [seeds]` (prints prime, random-control with seed spread).
 
 ## Appendix E: angular pair-correlation
 
@@ -266,23 +285,35 @@ at separation `d` for primes vs the matched random subset, resolved by separatio
 
 - **Short-range depletion confirmed.** `g_prime/g_random (d<3) ≈ 0.845` in *both* lattices —
   ~15% fewer close prime pairs than random-at-same-density, consistent with the NN result.
-- **The repulsion is anisotropic, and more so for ℤ[i].** Coefficient of variation of the
-  angular ratio over the lattice's symmetry sectors: **ℤ[i] = 0.091 vs ℤ[ω] = 0.051** — the
-  Gaussian repulsion carries roughly twice the angular structure, echoing its 4-fold vs the
-  hexagonal 6-fold symmetry.
 
-**Caveat (don't over-read the per-bin g(d)).** The radial bins alias across discrete lattice
-shells (each `d`-bin samples a different set of integer separation vectors), so individual
-bins swing wildly and are not meaningful; only the aggregated short-range ratio and the
-angular CV are robust here. A shell-matched normalization (compare prime/random at each exact
-admissible distance) is the clean refinement before any firm anisotropy claim.
+**RETRACTED: the "ℤ[i] is more angularly anisotropic" claim was a binning artifact.** An
+earlier draft reported an angular-ratio CV of "ℤ[i] = 0.091 vs ℤ[ω] = 0.051" — but those used
+*different sector counts* (8 vs 12; the code had `AB = eis?12:8`). With **equal** sector counts
+the CV is dominated by how sector boundaries alias against the discrete short-range lattice
+vectors, and it neither converges nor preserves the lattice ordering:
 
-Reproduce: `./bin/lattice --pcf i|w R`.
+| sectors | ℤ[i] CV | ℤ[ω] CV | "more anisotropic" |
+|---------|---------|---------|--------------------|
+| 6  | 0.015 | 0.035 | ℤ[ω] |
+| 8  | 0.091 | 0.025 | ℤ[i] |
+| 12 | 0.031 | 0.068 | ℤ[ω] |
+| 24 | 0.184 | 0.088 | ℤ[i] |
+| 36 | 0.405 | 0.169 | ℤ[i] |
+
+The sign of the comparison **flips with the (arbitrary) sector count** — there is no robust
+angular-anisotropy difference here; the CV measures sector-vs-lattice alignment, not physics.
+`--pcf` now sweeps the sector count so this is visible rather than hidden. A shell-matched
+normalization (prime/random at each exact admissible distance, i.e. against the singular series)
+is the only sound way to ask the angular question, and is left as future work.
+
+Reproduce: `./bin/lattice --pcf i|w R [sectors]` (prints g(d<3) and the CV-vs-sector sweep).
 
 ### Parked
 
-The √36 column-sweep architecture stays shelved. Next refinement: shell-matched pcf
-normalization to firm up the ℤ[i] vs ℤ[ω] anisotropy. No record-radius grind.
+The √36 column-sweep architecture stays shelved. The principled next step (per the council) is
+to compute the Hardy–Littlewood singular series 𝔖 per ring and report the residual `data/𝔖`
+for both the gap and pair-correlation statistics — that turns "primes repel" into "primes obey
+𝔖, here is the residual." No record-radius grind.
 
 ### Why this is the *right* place to look
 
