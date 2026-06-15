@@ -543,6 +543,94 @@ static GapStats gap_stats(bool eis, long long R, bool verbose) {
     return g;
 }
 
+// ===========================================================================
+// ANGULAR PAIR-CORRELATION. The NN study gave one moment (mean gap); the pair
+// correlation g(d) is the whole short-range two-point function: for a source
+// point, how many other points sit at separation d, vs the matched random
+// subset. g_prime/g_random < 1 at small d = repulsion; -> 1 as d grows = the
+// correlation length. We also resolve it by the ANGLE of the separation vector
+// to test whether the repulsion is isotropic or carries the lattice's symmetry.
+
+struct PCF { double g_short, aniso; };   // short-range depletion ratio; angular anisotropy (CV)
+
+static PCF pair_corr(bool eis, long long R, bool verbose) {
+    const long long OFF = eis ? (long long)(1.1547 * R) + 2 : R + 2, side = 2 * OFF + 1;
+    std::vector<uint64_t> gbm = lattice_bitmap(R, eis, OFF, side);
+    auto norm = [&](long long a, long long b) -> u64 { return eis ? (u64)(a*a - a*b + b*b) : (u64)(a*a + b*b); };
+    auto isP = [&](long long a, long long b) -> bool {
+        if (a < -OFF || a > OFF || b < -OFF || b > OFF) return false;
+        u64 t = (u64)(a + OFF) * side + (b + OFF); return (gbm[t >> 6] >> (t & 63)) & 1ULL;
+    };
+    const long long margin = 16;
+    const u64 Rin2 = (u64)(R - margin) * (R - margin);
+    // density -> random-subset threshold (same construction as gap_stats)
+    long long p_cnt = 0, cells = 0;
+    for (long long a = -OFF; a <= OFF; ++a)
+        for (long long b = -OFF; b <= OFF; ++b)
+            if (norm(a, b) <= Rin2) { ++cells; if (isP(a, b)) ++p_cnt; }
+    const u64 thresh = (u64)(((double)p_cnt / cells) * (double)(1ULL << 24));
+    auto isR = [&](long long a, long long b) -> bool {
+        if (a < -OFF || a > OFF || b < -OFF || b > OFF || norm(a, b) > (u64)R * R) return false;
+        u64 x = (u64)(a + OFF) * side + (b + OFF) + 0x9E3779B97F4A7C15ULL;
+        x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;
+        x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL;
+        x ^= x >> 31;
+        return (x >> 40) < thresh;
+    };
+
+    const double Dmax = 8.0, s3 = sqrt(3.0) / 2.0;
+    const int RB = 32; const double rbin = Dmax / RB;       // radial bins of g(d)
+    const int AB = eis ? 12 : 8;                            // angular bins = lattice symmetry order
+    // accumulate pair counts at separation (dx,dy) for source points selected by pred
+    auto accum = [&](auto pred, std::vector<double>& radial, std::vector<double>& ang) {
+        radial.assign(RB, 0); ang.assign(AB, 0);
+        long long M = (long long)Dmax + 1;
+        for (long long a = -OFF; a <= OFF; ++a)
+            for (long long b = -OFF; b <= OFF; ++b) {
+                if (norm(a, b) > Rin2 || !pred(a, b)) continue;
+                for (long long dx = -M; dx <= M; ++dx)
+                    for (long long dy = -M; dy <= M; ++dy) {
+                        if (dx == 0 && dy == 0) continue;
+                        double dd = sqrt((double)(eis ? dx*dx - dx*dy + dy*dy : dx*dx + dy*dy));
+                        if (dd > Dmax || !pred(a + dx, b + dy)) continue;
+                        int rb = (int)(dd / rbin); if (rb < RB) radial[rb] += 1;
+                        if (dd >= 2.0) {                    // angle of separation in the embedded plane
+                            double ex = eis ? dx - dy / 2.0 : (double)dx, ey = eis ? dy * s3 : (double)dy;
+                            double ph = atan2(ey, ex); if (ph < 0) ph += 2 * M_PI;
+                            ang[(int)(ph * AB / (2 * M_PI)) % AB] += 1;
+                        }
+                    }
+            }
+    };
+    std::vector<double> pr, pa, rr, ra;
+    accum(isP, pr, pa); accum(isR, rr, ra);
+
+    // g_short: ratio of prime to random pairs in the smallest populated shells (d<3)
+    double ps = 0, rs = 0;
+    for (int k = 0; k < RB && (k + 1) * rbin <= 3.0; ++k) { ps += pr[k]; rs += rr[k]; }
+    double g_short = (rs > 0) ? ps / rs : 0;
+    // anisotropy: coefficient of variation of the prime/random angular ratio (0 = isotropic)
+    double gm = 0; std::vector<double> gr(AB);
+    for (int k = 0; k < AB; ++k) { gr[k] = ra[k] > 0 ? pa[k] / ra[k] : 0; gm += gr[k]; }
+    gm /= AB; double var = 0; for (int k = 0; k < AB; ++k) var += (gr[k] - gm) * (gr[k] - gm);
+    double aniso = gm > 0 ? sqrt(var / AB) / gm : 0;
+
+    if (verbose) {
+        printf("Pair correlation, %s, R=%lld (%lld source primes, Dmax=%.0f)\n",
+               eis ? "Z[w]" : "Z[i]", R, p_cnt, Dmax);
+        printf("  radial g_prime/g_random by separation d:\n");
+        for (int k = 0; k < RB; ++k) {
+            if (pr[k] == 0 && rr[k] == 0) continue;
+            double g = rr[k] > 0 ? pr[k] / rr[k] : 0;
+            int bar = (int)(g * 30);
+            printf("   d<%4.2f  g=%.3f %s\n", (k + 1) * rbin, g, std::string(bar > 60 ? 60 : bar, '#').c_str());
+        }
+        printf("  short-range (d<3) g_prime/g_random = %.4f   (<1 = repulsion beyond hard-core)\n", g_short);
+        printf("  angular anisotropy of the ratio (CV over %d sectors) = %.4f   (0 = isotropic)\n", AB, aniso);
+    }
+    return {g_short, aniso};
+}
+
 // --- self-test (red->green gate) -------------------------------------------
 static int selftest() {
     // classification against hand-computed truth
@@ -601,8 +689,13 @@ static int selftest() {
     assert(gi.random_count > 0 && gi.random_mean >= 1.0 && gi.random_mean < 5.0 && "Z[i] random control failed");
     assert(gw.random_count > 0 && gw.random_mean >= 1.0 && gw.random_mean < 5.0 && "Z[w] random control failed");
 
-    printf("selftest OK  (Z[i]: chi^2=%.3f, |z|=%.2f, NN=%.2f vs rand %.2f | Z[w]: chi^2=%.3f, NN=%.2f vs rand %.2f)\n",
-           chi2, m.farthest, gi.obs_mean, gi.random_mean, echi2, gw.obs_mean, gw.random_mean);
+    // Pair correlation: short-range ratio is a finite depletion (<= ~1.1), control ran.
+    PCF pi = pair_corr(false, 400, false), pw = pair_corr(true, 400, false);
+    assert(pi.g_short > 0 && pi.g_short < 1.2 && "Z[i] pcf short-range ratio implausible");
+    assert(pw.g_short > 0 && pw.g_short < 1.2 && "Z[w] pcf short-range ratio implausible");
+
+    printf("selftest OK  (Z[i]: chi^2=%.3f, |z|=%.2f, NN=%.2f vs rand %.2f, pcf g=%.3f | Z[w]: chi^2=%.3f, NN=%.2f vs rand %.2f, pcf g=%.3f)\n",
+           chi2, m.farthest, gi.obs_mean, gi.random_mean, pi.g_short, echi2, gw.obs_mean, gw.random_mean, pw.g_short);
     return 0;
 }
 
@@ -646,6 +739,12 @@ int main(int argc, char** argv) {
         gap_stats(eis, R, true);
         return 0;
     }
+    if (argc >= 4 && !strcmp(argv[1], "--pcf")) {
+        bool eis = !strcmp(argv[2], "w") || !strcmp(argv[2], "eisenstein");
+        long long R = atoll(argv[3]);
+        pair_corr(eis, R, true);
+        return 0;
+    }
     fprintf(stderr,
         "usage:\n"
         "  %s --selftest\n"
@@ -658,7 +757,8 @@ int main(int argc, char** argv) {
         "  %s --emoat  K R         Eisenstein moat walk (CPU)\n"
         "  %s --emoat-gpu K R      same, GPU disk-sieve bitmap\n"
         "  Statistics:\n"
-        "  %s --gaps i|w R         nearest-neighbour gap distribution vs the random model\n",
-        argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
+        "  %s --gaps i|w R         nearest-neighbour gap distribution vs the random model\n"
+        "  %s --pcf  i|w R         angular pair-correlation g(d) vs random subset\n",
+        argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
     return 1;
 }

@@ -259,11 +259,30 @@ look identical; comparing to a matched random lattice subset reveals they are no
 
 Reproduce: `./bin/lattice --gaps i|w R` (now prints prime, random-control, and Poisson means).
 
+## Appendix E: angular pair-correlation
+
+`--pcf i|w R` extends the NN moment to the full short-range two-point function: pair counts
+at separation `d` for primes vs the matched random subset, resolved by separation angle.
+
+- **Short-range depletion confirmed.** `g_prime/g_random (d<3) ≈ 0.845` in *both* lattices —
+  ~15% fewer close prime pairs than random-at-same-density, consistent with the NN result.
+- **The repulsion is anisotropic, and more so for ℤ[i].** Coefficient of variation of the
+  angular ratio over the lattice's symmetry sectors: **ℤ[i] = 0.091 vs ℤ[ω] = 0.051** — the
+  Gaussian repulsion carries roughly twice the angular structure, echoing its 4-fold vs the
+  hexagonal 6-fold symmetry.
+
+**Caveat (don't over-read the per-bin g(d)).** The radial bins alias across discrete lattice
+shells (each `d`-bin samples a different set of integer separation vectors), so individual
+bins swing wildly and are not meaningful; only the aggregated short-range ratio and the
+angular CV are robust here. A shell-matched normalization (compare prime/random at each exact
+admissible distance) is the clean refinement before any firm anisotropy claim.
+
+Reproduce: `./bin/lattice --pcf i|w R`.
+
 ### Parked
 
-The √36 column-sweep architecture stays shelved. Cheap next statistic: angular
-pair-correlation (does the ℤ[i] > ℤ[ω] repulsion show up in two-point angular structure too?).
-No record-radius grind until a statistic demands the reach.
+The √36 column-sweep architecture stays shelved. Next refinement: shell-matched pcf
+normalization to firm up the ℤ[i] vs ℤ[ω] anisotropy. No record-radius grind.
 
 ### Why this is the *right* place to look
 
