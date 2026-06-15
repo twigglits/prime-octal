@@ -218,6 +218,12 @@ static SweepResult moat_sweep(long long Ksq, long long R, long long blockW, bool
         }
         long long live = (long long)d.par.size() - (long long)d.fl.size();
         if (live > maxRecords) maxRecords = live;
+        if (verbose && R > 50000 && a % 20000 == 0) {      // progress for long runs
+            double of = born ? sqrt((double)d.mx[d.find(seedRid)]) : 0;
+            fprintf(stderr, "  [sweep] col %lld/%lld (%.1f%%)  origin |z| so far=%.0f  live records=%lld (%.0f MB)\n",
+                    a, R, 100.0 * a / R, of, live, live * 28.0 / 1e6 + cell.size() * 4.0 / 1e6);
+            fflush(stderr);
+        }
     }
     if (!escaped && !bounded && born) {                    // swept to R without finalizing
         int root = d.find(seedRid); escaped = true; farthest = sqrt((double)d.mx[root]);
