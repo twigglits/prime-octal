@@ -142,8 +142,13 @@ parameter `KSQ` is the **exact integer** squared step bound (a step `(dx,dy)` is
 | KSQ | k = √KSQ | quadrant component | farthest \|z\| | verdict |
 |-----|----------|--------------------|----------------|---------|
 | 20  | 4.472    | 547 583 245        | **133 679.07** | BOUNDED |
-| 25  | 5.000    | 547 583 245        | 133 679.07     | BOUNDED (same component) |
-| 26  | 5.099    | —                  | hits R=150 000 | INCONCLUSIVE (escapes) |
+| 25  | 5.000    | 547 583 245        | 133 679.07     | BOUNDED (identical component) |
+| 26  | 5.099    | —                  | escapes to R=150 000 (\|z\|=149 997.5) | INCONCLUSIVE |
+
+All three rows are verified by direct computation: k²=20 and k²=25 give the *identical*
+component (547 583 245 primes, |z|=133 679.0655), while k²=26 escapes the R=150 000 disk —
+exactly as Tsuchimura's table demands (its true farthest is 1 015 638.765). This is the
+definitive proof the old `--moat-gpu 5.099` run (5.099²=25.9998 ⇒ k²≤25) computed √20, not √26.
 
 This reproduces **Tsuchimura's √20 moat** (farthest 133 679.065, first-octant component
 273 791 623 — our quadrant count is exactly 2× that): the origin island is sealed off by a
