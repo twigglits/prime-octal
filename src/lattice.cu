@@ -646,6 +646,127 @@ static PCF pair_corr(bool eis, long long R, int sectors, bool verbose) {
     return {g_short, aniso};
 }
 
+// ===========================================================================
+// HARDY-LITTLEWOOD SINGULAR SERIES (the principled null). For a fixed offset
+// delta, the density of prime pairs (pi, pi+delta) relative to the random-at-
+// matched-density baseline converges to the singular series
+//     S(delta) = prod_p  local_p,    local_p = (1 - w_p/Np) / (1 - 1/Np)^2,
+// the product over prime ideals p, where w_p = #{distinct residues of {0,-delta}
+// mod p} = 1 if p | delta else 2.  So local_p = Np/(Np-1) when p|delta, and
+// (1-2/Np)/(1-1/Np)^2 otherwise.  The norm-2 ideal of Z[i] makes local=0 unless
+// it divides delta -> the Gaussian parity obstruction (S=0 for "odd" offsets).
+// Z[w] has no norm-2 ideal, so NO hard obstruction. The measured prime/random
+// ratio at offset delta should equal S(delta): that is the council's test.
+
+static std::vector<int> primes_upto(int Q) {
+    std::vector<char> c(Q + 1, 1); std::vector<int> ps;
+    for (int i = 2; i <= Q; ++i) if (c[i]) { ps.push_back(i); for (long long j = (long long)i * i; j <= Q; j += i) c[j] = 0; }
+    return ps;
+}
+
+static double singular_series(bool eis, long long dx, long long dy, const std::vector<int>& primes) {
+    long long Nd = eis ? dx * dx - dx * dy + dy * dy : dx * dx + dy * dy;
+    if (Nd == 0) return 0;
+    const long long Q = primes.empty() ? 0 : (long long)primes.back();
+    auto b = [](double q) { double u = 1.0 - 1.0 / q; return (1.0 - 2.0 / q) / (u * u); };
+    auto modz = [&](long long v, int p) { return (int)(((v % p) + p) % p); };
+    double prod = 1.0;
+    for (int p : primes) {
+        if (Nd % p != 0) {                         // p divides no ideal factor of delta
+            if (!eis) {
+                if (p == 2) prod *= b(2);                                  // =0 unless 2|Nd
+                else if (p % 4 == 1) prod *= b(p) * b(p);                  // two split ideals
+                else { long long q = (long long)p * p; if (q <= Q) prod *= b((double)q); }  // inert
+            } else {
+                if (p == 3) prod *= b(3);
+                else if (p % 3 == 1) prod *= b(p) * b(p);
+                else { long long q = (long long)p * p; if (q <= Q) prod *= b((double)q); }
+            }
+            continue;
+        }
+        // p | Nd: handle each ideal above p, splitting into divides-delta vs not.
+        if ((!eis && p == 2) || (eis && p == 3)) {                        // ramified, norm p
+            prod *= (double)p / (p - 1);                                  // it divides delta (Nd ≡ 0)
+        } else if ((!eis && p % 4 == 1) || (eis && p % 3 == 1)) {         // two split ideals, norm p
+            for (int r = 0; r < p; ++r) {
+                bool root = !eis ? (((long long)r * r + 1) % p == 0) : (((long long)r * r + r + 1) % p == 0);
+                if (!root) continue;
+                bool div = modz(dx + dy * (long long)r, p) == 0;          // i (or w) ≡ r mod this ideal
+                prod *= div ? (double)p / (p - 1) : b((double)p);
+            }
+        } else {                                                          // inert, norm p^2; p|Nd ⟹ p|delta
+            long long q = (long long)p * p;
+            prod *= (double)q / (q - 1);
+        }
+    }
+    return prod;
+}
+
+// Overlay: measured prime/random pair ratio at each small offset vs S(delta).
+static void sigma_test(bool eis, long long R, int nseeds, bool verbose) {
+    const long long OFF = eis ? (long long)(1.1547 * R) + 2 : R + 2, side = 2 * OFF + 1;
+    std::vector<uint64_t> gbm = lattice_bitmap(R, eis, OFF, side);
+    auto norm = [&](long long a, long long b) -> u64 { return eis ? (u64)(a*a - a*b + b*b) : (u64)(a*a + b*b); };
+    auto isP = [&](long long a, long long b) -> bool {
+        if (a < -OFF || a > OFF || b < -OFF || b > OFF) return false;
+        u64 t = (u64)(a + OFF) * side + (b + OFF); return (gbm[t >> 6] >> (t & 63)) & 1ULL;
+    };
+    const long long margin = 12;
+    const u64 Rin2 = (u64)(R - margin) * (R - margin);
+    long long p_cnt = 0, cells = 0;
+    for (long long a = -OFF; a <= OFF; ++a) for (long long b = -OFF; b <= OFF; ++b)
+        if (norm(a, b) <= Rin2) { ++cells; if (isP(a, b)) ++p_cnt; }
+    const u64 thresh = (u64)(((double)p_cnt / cells) * (double)(1ULL << 24));
+    auto isRs = [&](long long a, long long b, u64 seed) -> bool {
+        if (a < -OFF || a > OFF || b < -OFF || b > OFF || norm(a, b) > (u64)R * R) return false;
+        u64 x = (u64)(a + OFF) * side + (b + OFF) + seed;
+        x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL; x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL; x ^= x >> 31;
+        return (x >> 40) < thresh;
+    };
+    // canonical small offsets (one of each +/- pair), norm <= 36
+    const long long Dm = 6;
+    std::vector<std::pair<long long,long long>> offs;
+    for (long long dx = -Dm; dx <= Dm; ++dx)
+        for (long long dy = -Dm; dy <= Dm; ++dy) {
+            if (dx == 0 && dy == 0) continue;
+            if (!(dx > 0 || (dx == 0 && dy > 0))) continue;        // half-plane
+            u64 n = eis ? (u64)(dx*dx - dx*dy + dy*dy) : (u64)(dx*dx + dy*dy);
+            if (n <= 36) offs.push_back({dx, dy});
+        }
+    std::vector<int> primes = primes_upto(200000);
+
+    if (verbose) printf("Singular series overlay, %s, R=%lld (%lld primes, %d seeds)\n  %-10s %5s %10s %10s %8s\n",
+                        eis ? "Z[w]" : "Z[i]", R, p_cnt, nseeds, "offset", "N", "obs r", "S(delta)", "r/S");
+    double sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0, sresid = 0; int ncmp = 0;
+    for (auto [dx, dy] : offs) {
+        long long P = 0; double Rnd = 0;
+        for (long long a = -OFF; a <= OFF; ++a) for (long long b = -OFF; b <= OFF; ++b) {
+            if (norm(a, b) > Rin2 || !isP(a, b)) continue;
+            if (isP(a + dx, b + dy)) ++P;
+        }
+        for (int s = 0; s < nseeds; ++s) {
+            u64 seed = 0x9E3779B97F4A7C15ULL * (u64)(s + 1); long long rc = 0;
+            for (long long a = -OFF; a <= OFF; ++a) for (long long b = -OFF; b <= OFF; ++b) {
+                if (norm(a, b) > Rin2 || !isRs(a, b, seed)) continue;
+                if (isRs(a + dx, b + dy, seed)) ++rc;
+            }
+            Rnd += rc;
+        }
+        Rnd /= nseeds;
+        double r = Rnd > 0 ? P / Rnd : 0;
+        double S = singular_series(eis, dx, dy, primes);
+        if (verbose) printf("  (%2lld,%2lld)    %5llu %10.4f %10.4f %8.3f\n", dx, dy,
+                            (unsigned long long)(eis ? dx*dx-dx*dy+dy*dy : dx*dx+dy*dy), r, S, S > 0 ? r / S : 0);
+        if (S > 1e-9) { sx += S; sy += r; sxx += S*S; syy += r*r; sxy += S*r; sresid += r/S; ++ncmp; }
+    }
+    if (verbose && ncmp > 1) {
+        double corr = (ncmp*sxy - sx*sy) / sqrt((ncmp*sxx - sx*sx) * (ncmp*syy - sy*sy));
+        printf("  admissible offsets: %d   corr(obs, S) = %.4f   mean(obs/S) = %.4f\n",
+               ncmp, corr, sresid / ncmp);
+        printf("  --> corr~1 and mean(obs/S)~1 means the repulsion IS the singular series.\n");
+    }
+}
+
 // --- self-test (red->green gate) -------------------------------------------
 static int selftest() {
     // classification against hand-computed truth
@@ -710,9 +831,17 @@ static int selftest() {
     assert(pi.g_short > 0 && pi.g_short < 1.2 && "Z[i] pcf short-range ratio implausible");
     assert(pw.g_short > 0 && pw.g_short < 1.2 && "Z[w] pcf short-range ratio implausible");
 
-    printf("selftest OK  (Z[i]: chi^2=%.3f, |z|=%.2f, NN=%.2f vs rand %.2f+/-%.3f, pcf g=%.3f | Z[w]: chi^2=%.3f, NN=%.2f vs rand %.2f+/-%.3f, pcf g=%.3f)\n",
-           chi2, m.farthest, gi.obs_mean, gi.random_mean, gi.random_sd, pi.g_short,
-           echi2, gw.obs_mean, gw.random_mean, gw.random_sd, pw.g_short);
+    // Singular series: Gaussian parity obstruction (odd offset -> S=0), admissible
+    // offsets finite positive; Z[w] has no norm-2 ideal so all offsets admissible.
+    std::vector<int> sp = primes_upto(100000);
+    assert(singular_series(false, 1, 0, sp) < 1e-9 && "Z[i] odd offset should be inadmissible (S=0)");
+    assert(singular_series(false, 1, 1, sp) > 0.1 && "Z[i] even offset should be admissible");
+    assert(singular_series(false, 2, 0, sp) > 0.1 && "Z[i] offset 2 admissible");
+    assert(singular_series(true, 1, 0, sp) > 0.1 && "Z[w] has no parity obstruction");
+
+    printf("selftest OK  (Z[i]: chi^2=%.3f, |z|=%.2f, NN=%.2f vs rand %.2f+/-%.3f, pcf g=%.3f, S(1,1)=%.3f | Z[w]: chi^2=%.3f, NN=%.2f vs rand %.2f+/-%.3f, pcf g=%.3f, S(1,0)=%.3f)\n",
+           chi2, m.farthest, gi.obs_mean, gi.random_mean, gi.random_sd, pi.g_short, singular_series(false, 1, 1, sp),
+           echi2, gw.obs_mean, gw.random_mean, gw.random_sd, pw.g_short, singular_series(true, 1, 0, sp));
     return 0;
 }
 
@@ -764,6 +893,13 @@ int main(int argc, char** argv) {
         pair_corr(eis, R, sectors, true);
         return 0;
     }
+    if (argc >= 4 && !strcmp(argv[1], "--sigma")) {
+        bool eis = !strcmp(argv[2], "w") || !strcmp(argv[2], "eisenstein");
+        long long R = atoll(argv[3]);
+        int nseeds = argc >= 5 ? atoi(argv[4]) : 3;
+        sigma_test(eis, R, nseeds, true);
+        return 0;
+    }
     fprintf(stderr,
         "usage:\n"
         "  %s --selftest\n"
@@ -777,7 +913,8 @@ int main(int argc, char** argv) {
         "  %s --emoat-gpu K R      same, GPU disk-sieve bitmap\n"
         "  Statistics:\n"
         "  %s --gaps i|w R [seeds] NN gaps vs matched random subset, error bars over seeds\n"
-        "  %s --pcf  i|w R [sect]  angular pair-correlation; CV vs sector-count sweep\n",
-        argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
+        "  %s --pcf  i|w R [sect]  angular pair-correlation; CV vs sector-count sweep\n"
+        "  %s --sigma i|w R [seeds] Hardy-Littlewood singular series overlay vs measured pairs\n",
+        argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
     return 1;
 }

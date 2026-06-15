@@ -308,12 +308,46 @@ is the only sound way to ask the angular question, and is left as future work.
 
 Reproduce: `./bin/lattice --pcf i|w R [sectors]` (prints g(d<3) and the CV-vs-sector sweep).
 
+## Appendix F: the repulsion IS the singular series (resolution)
+
+The council's principled null was the **Hardy–Littlewood singular series** 𝔖, not a random
+subset. `--sigma i|w R` computes, for every small offset δ, the measured prime/random pair
+ratio and overlays it on 𝔖(δ) computed independently from the Euler product over prime ideals
+`𝔖(δ) = ∏_𝔭 (1 − ω_𝔭/N𝔭)/(1 − 1/N𝔭)²`, ω_𝔭 = 1 if 𝔭|δ else 2. Result at R=4000:
+
+| lattice | admissible offsets | corr(obs, 𝔖) | mean(obs/𝔖) |
+|---------|--------------------|--------------|-------------|
+| ℤ[i]  | 30 of 60 (half forbidden) | **0.9999** | 1.005 |
+| ℤ[ω]  | **63 of 63 (none forbidden)** | **1.0000** | 1.006 |
+
+The measured pair ratios reproduce 𝔖 offset-by-offset to ~0.5% (a uniform finite-size scale
+factor, constant across offsets — it does not affect the correlation). This **explains every
+earlier observation**:
+
+1. **The "repulsion" is exactly 𝔖, not a new phenomenon.** Per offset the ratio is *not*
+   uniformly <1 — admissible offsets are *enhanced* (ℤ[i]: 1.68 at norm 2/4/8, 2.24 at norm
+   10/20; ℤ[ω]: up to 1.83). The nearest-neighbour "primes farther apart than random" was the
+   aggregate of forbidden offsets plus enhanced survivors — all encoded in 𝔖.
+2. **The ℤ[i] > ℤ[ω] gap is the parity obstruction, and nothing more.** ℤ[i] has a norm-2
+   prime ideal (1+i), so every odd-norm offset is forbidden (𝔖 = 0 — one of the pair is always
+   even): *half* of ℤ[i]'s offsets are dead. ℤ[ω] has **no norm-2 ideal**, so **all 63 offsets
+   are admissible** — zero hard obstruction. That structural difference (which the gap-statistic
+   only saw as "8.6% vs 5.6%") is the whole story.
+3. **Confirms "robust ≠ anomalous."** The repulsion is a real, ~500σ measurement *and* fully
+   predicted by classical analytic number theory. No anomaly survives.
+
+So the lattice-prime two-point structure in both rings is the Hardy–Littlewood singular series,
+verified empirically at GPU scale (corr ≈ 1.0000). The genuinely *novel* slice, per the domain
+council member, would be the **Eisenstein** sector-variance / Hecke-angle form factor (the ℤ[ω]
+analogue of Kurlberg–Rudnick / Rudnick–Waxman) — empirically unstudied — but that is a new line,
+not a loose end.
+
+Reproduce: `./bin/lattice --sigma i|w R [seeds]`.
+
 ### Parked
 
-The √36 column-sweep architecture stays shelved. The principled next step (per the council) is
-to compute the Hardy–Littlewood singular series 𝔖 per ring and report the residual `data/𝔖`
-for both the gap and pair-correlation statistics — that turns "primes repel" into "primes obey
-𝔖, here is the residual." No record-radius grind.
+The √36 column-sweep moat and the Eisenstein Hecke-angle form factor are the two open
+directions; neither is a loose end. The two-point story is closed: it is 𝔖.
 
 ### Why this is the *right* place to look
 
