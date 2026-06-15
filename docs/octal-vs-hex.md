@@ -118,7 +118,7 @@ the octal one.
 > step size *K*?
 
 Conjectured **no** (a prime-free "moat" always eventually blocks you), but unproven.
-`./bin/lattice --moat K R` does a BFS over the prime lattice from `1+i`. Measured component
+`./bin/lattice --moat KSQ R` (KSQ = integer k²) does a BFS over the prime lattice from `1+i`. Measured component
 of the origin (BFS exhausted → genuinely bounded, a real moat):
 
 | step K | √ form | component primes | farthest \|z\| |
@@ -131,35 +131,48 @@ of the origin (BFS exhausted → genuinely bounded, a real moat):
 Every tested step size leaves the origin in a finite island — the moat conjecture holds
 in range. The √10 jump shows how fast the reachable island grows just before the next moat.
 
-### Probe 2b — reaching the √26 record (GPU disk-sieve)
+### Probe 2b — the √20 moat (GPU disk-sieve) — and a corrected-record note
 
-The Miller–Rabin BFS above dies at √26 (the component is ~10⁹ primes; it times out by
-R = 20 000). `--moat-gpu K R` precomputes the Gaussian-prime bitmap on the GPU
-(`mark_gaussian` kernel over a rational odd-sieve to R²) so the BFS is pure O(1) lookups,
-folded into one quadrant by the 8-fold lattice symmetry. Result:
+The Miller–Rabin BFS above times out on the large moats. `--moat-gpu KSQ R` precomputes the
+Gaussian-prime bitmap on the GPU (`mark_gaussian` kernel over a rational odd-sieve to R²) so
+the BFS is pure O(1) lookups, folded into one quadrant by the 8-fold lattice symmetry. The
+parameter `KSQ` is the **exact integer** squared step bound (a step `(dx,dy)` is allowed iff
+`dx²+dy² ≤ KSQ`). Result at R = 150 000:
 
-| step K | √ form | quadrant component | farthest \|z\| | wall time | verdict |
-|--------|--------|--------------------|----------------|-----------|---------|
-| 5.099  | **√26** | 547 583 245       | **133 679.07** | 4m38s     | **BOUNDED** |
+| KSQ | k = √KSQ | quadrant component | farthest \|z\| | verdict |
+|-----|----------|--------------------|----------------|---------|
+| 20  | 4.472    | 547 583 245        | **133 679.07** | BOUNDED |
+| 25  | 5.000    | 547 583 245        | 133 679.07     | BOUNDED (same component) |
+| 26  | 5.099    | —                  | hits R=150 000 | INCONCLUSIVE (escapes) |
 
-This reproduces the **Gethner–Wagon–Wick √26-moat** (1998) — historically the largest known
-moat — on a single RTX 5090: ~2.2 billion Gaussian primes (full plane), origin island
-sealed off by a prime-free ring at radius ≈ 133 679. Validation: `make test` asserts the
-GPU bitmap's farthest distance matches the CPU Miller–Rabin BFS bit-for-bit for K = 1.5, 2,
-√8 before any large run.
+This reproduces **Tsuchimura's √20 moat** (farthest 133 679.065, first-octant component
+273 791 623 — our quadrant count is exactly 2× that): the origin island is sealed off by a
+prime-free ring at radius ≈ 133 679, on a single RTX 5090.
+
+> **⚠️ Corrected record (was mislabeled √26).** An earlier version of this file claimed this
+> result was the **√26** moat, run as `--moat-gpu 5.099`. That was wrong, for two reasons the
+> integer-`KSQ` API now prevents: (1) `5.099² = 25.9998 < 26`, so the float step set silently
+> excluded the norm-26 steps `(5,1),(1,5)` and computed the `k²≤25` plateau — whose farthest
+> distance is constant for `k² ∈ [20,26)` and **equals the √20 value**; (2) the **true √26**
+> moat reaches `|z| = 1 015 638.765` with a 14.5-billion-prime component (Tsuchimura), far
+> beyond the R = 150 000 searched here. The number 133 679 was always the √20 answer. The
+> true √26 moat was **never computed** by this project.
 
 ### The scaling wall (and the architecture past it)
 
-The next moat is **√36**, which needs ~5000× the √26 compute. The full-disk bitmap can't
-get there: its rational-sieve (R² bits) and Gaussian bitmap ((R+1)² bits) blow past the
-32 GB GPU at R ≈ 400 000, while √36 lives near R ~ 10⁶ (125 GB bitmap). The fix is to drop
-the dense O(R²) bitmaps for a **column sweep**: because steps are bounded by K, BFS
-reachability only ever connects cells within K columns, so you retain a moving window of
-~K columns of visited state (O(K·R) memory, < 1 GB even at R = 10⁶) and sieve each column's
-norms on the fly. That plus distributed compute (the component itself is ~10¹⁰ nodes) is
-what the √36 frontier requires — a genuine HPC job, not a single-node afternoon.
+The genuinely open frontier is the **√36** moat: Tsuchimura established only an *upper bound*
+`|ξ(√36)| < 80 015 782` — the exact farthest distance is **unknown** (the √26 and √32 moats
+are solved: 1 015 638 and 2 823 054). Reaching √36 needs ~5000× the √26 compute. The full-disk
+bitmap can't get there: its rational-sieve (R² bits) and Gaussian bitmap ((R+1)² bits) blow
+past the 32 GB GPU at R ≈ 400 000, while √36 lives near R ~ 10⁸ (norm). The fix is to drop the
+dense O(R²) bitmaps for a **column sweep**: because steps are bounded by k, BFS reachability
+only connects cells within k columns, so you retain a moving window of ~k columns of visited
+state (O(k·R) memory) and sieve each column's norms on the fly — but the compute (~16 days
+single-GPU, component ~10¹⁰⁺ nodes) makes it a genuine HPC job, not a single-node afternoon.
 
-Reproduce the record: `./bin/lattice --moat-gpu 5.099 150000` (needs ~7 GB RAM, ~5 min).
+Reproduce: `./bin/lattice --moat-gpu 20 150000` (√20 moat; ~7 GB RAM, ~5 min). Validation:
+`make test` asserts the GPU bitmap's farthest matches the CPU BFS for k²=2,4,8. Cross-check
+against Tsuchimura's exact table (√20 → 133 679.065, √26 → 1 015 638.765, √32 → 2 823 054.542).
 
 ---
 
@@ -197,8 +210,8 @@ but is far more violent — a concrete, reproducible structural difference betwe
 rings rather than another record radius. Both moats remain bounded at every tested K,
 consistent with the conjecture (no infinite prime walk) in both lattices.
 
-Reproduce: `./bin/lattice --ehecke R [bins]`, `./bin/lattice --emoat K R`,
-`./bin/lattice --emoat-gpu K R`.
+Reproduce: `./bin/lattice --ehecke R [bins]`, `./bin/lattice --emoat KSQ R`,
+`./bin/lattice --emoat-gpu KSQ R`.
 
 # Appendix C: nearest-neighbour gap statistics (ℤ[i] vs ℤ[ω])
 
@@ -482,4 +495,4 @@ remain ~1/ln n dense in every direction — but it is the frontier where a CUDA 
 measure something not already settled by the wheel.
 
 Reproduce: `make test` (includes `lattice --selftest`); `./bin/lattice --hecke R [bins]`,
-`./bin/lattice --moat K R`.
+`./bin/lattice --moat KSQ R` (KSQ = integer k²).

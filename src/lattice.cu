@@ -82,14 +82,17 @@ static double hecke_chi2(long long R, int bins, bool verbose) {
 // finite — that is the "moat"). `size` receives the component's vertex count.
 struct MoatResult { double farthest; bool escaped; long long size; };
 
-static MoatResult moat(double K, long long limit, bool verbose) {
-    const long long Kc = (long long)floor(K);
-    const double K2 = K * K;
+// Ksq is the EXACT integer squared step bound: a step (dx,dy) is allowed iff
+// 1 <= dx*dx+dy*dy <= Ksq. Integer threshold avoids the float-rounding trap that
+// silently turned a "k=sqrt(26)" request (5.099^2 = 25.9998 < 26) into a k^2<=25
+// search. The "sqrt(N) moat" is therefore Ksq = N exactly.
+static MoatResult moat(long long Ksq, long long limit, bool verbose) {
+    const long long Kc = (long long)floor(sqrt((double)Ksq));
     std::vector<std::pair<long long,long long>> steps;
     for (long long dx = -Kc; dx <= Kc; ++dx)
         for (long long dy = -Kc; dy <= Kc; ++dy) {
-            double d2 = (double)dx * dx + (double)dy * dy;
-            if (d2 >= 1 && d2 <= K2) steps.push_back({dx, dy});
+            long long d2 = dx * dx + dy * dy;
+            if (d2 >= 1 && d2 <= Ksq) steps.push_back({dx, dy});
         }
     auto key = [](long long a, long long b) {
         return ((a + 0x40000000LL) << 32) | (b + 0x40000000LL);   // pack two ~31-bit coords
@@ -112,8 +115,8 @@ static MoatResult moat(double K, long long limit, bool verbose) {
         }
     }
     if (verbose)
-        printf("Moat K=%.4f: component of origin has %lld primes, farthest |z|=%.4f, %s\n",
-               K, size, farthest, escaped ? "ESCAPED past limit (!)" : "bounded -> moat exists");
+        printf("Moat k=sqrt(%lld)=%.4f: component of origin has %lld primes, farthest |z|=%.4f, %s\n",
+               Ksq, sqrt((double)Ksq), size, farthest, escaped ? "ESCAPED past limit (!)" : "bounded -> moat exists");
     return {farthest, escaped, size};
 }
 
@@ -169,9 +172,8 @@ __global__ void mark_gaussian(uint64_t* gbm, const uint64_t* rsieve, long long R
     if (prime) atomicOr((unsigned long long*)&gbm[t >> 6], 1ULL << (t & 63));
 }
 
-static MoatResult moat_gpu(double K, long long R, bool verbose) {
-    const long long Kc = (long long)floor(K);
-    const double K2 = K * K;
+static MoatResult moat_gpu(long long Ksq, long long R, bool verbose) {   // Ksq = exact integer k^2
+    const long long Kc = (long long)floor(sqrt((double)Ksq));
     const u64 Nmax = (u64)R * R;
     const u64 span = (u64)(R + 1) * (R + 1);
     const size_t words = (span + 63) / 64;
@@ -212,8 +214,8 @@ static MoatResult moat_gpu(double K, long long R, bool verbose) {
     std::vector<std::pair<long long,long long>> steps;
     for (long long dx = -Kc; dx <= Kc; ++dx)
         for (long long dy = -Kc; dy <= Kc; ++dy) {
-            double d2 = (double)dx * dx + (double)dy * dy;
-            if (d2 >= 1 && d2 <= K2) steps.push_back({dx, dy});
+            long long d2 = dx * dx + dy * dy;
+            if (d2 >= 1 && d2 <= Ksq) steps.push_back({dx, dy});
         }
     std::queue<std::pair<long long,long long>> q;
     q.push({1, 1}); visit(1, 1);
@@ -234,11 +236,11 @@ static MoatResult moat_gpu(double K, long long R, bool verbose) {
     }
     if (verbose) {
         if (reached_boundary)
-            printf("Moat K=%.4f: component reached the disk boundary (farthest |z|=%.1f >= R-K). "
-                   "INCONCLUSIVE — rerun with larger R.\n", K, farthest);
+            printf("Moat k=sqrt(%lld)=%.4f: component reached the disk boundary (farthest |z|=%.1f >= R-K). "
+                   "INCONCLUSIVE — rerun with larger R.\n", Ksq, sqrt((double)Ksq), farthest);
         else
-            printf("Moat K=%.4f: BOUNDED. quadrant component = %lld primes, farthest |z|=%.4f "
-                   "-> moat confirmed below this radius.\n", K, size, farthest);
+            printf("Moat k=sqrt(%lld)=%.4f: BOUNDED. quadrant component = %lld primes, farthest |z|=%.4f "
+                   "-> moat confirmed below this radius.\n", Ksq, sqrt((double)Ksq), size, farthest);
     }
     return {farthest, reached_boundary, size};
 }
@@ -316,21 +318,22 @@ static double ehecke_chi2(long long R, int bins, bool verbose) {
     return reduced;
 }
 
-// hex steps of length <= K: integer offsets with 1 <= N(da,db) <= K^2.
-static std::vector<std::pair<long long,long long>> hex_steps(double K) {
+// hex steps with squared length <= Ksq: integer offsets with 1 <= N(da,db) <= Ksq
+// (N = the Eisenstein norm = squared Euclidean length). Exact integer threshold.
+static std::vector<std::pair<long long,long long>> hex_steps(long long Ksq) {
     std::vector<std::pair<long long,long long>> s;
-    long long M = (long long)ceil(K * 1.16) + 1;
+    long long M = (long long)ceil(sqrt((double)Ksq) * 1.16) + 1;
     for (long long da = -M; da <= M; ++da)
         for (long long db = -M; db <= M; ++db) {
             long long n = eis_norm(da, db);
-            if (n >= 1 && (double)n <= K * K) s.push_back({da, db});
+            if (n >= 1 && n <= Ksq) s.push_back({da, db});
         }
     return s;
 }
 
 // CPU Miller-Rabin BFS moat in Z[w] (full plane). Reference + small-scale truth.
-static MoatResult emoat(double K, long long limit, bool verbose) {
-    auto steps = hex_steps(K);
+static MoatResult emoat(long long Ksq, long long limit, bool verbose) {
+    auto steps = hex_steps(Ksq);
     auto key = [](long long a, long long b) { return ((a + 0x40000000LL) << 32) | (b + 0x40000000LL); };
     std::unordered_set<long long> seen;
     std::queue<std::pair<long long,long long>> q;
@@ -348,8 +351,8 @@ static MoatResult emoat(double K, long long limit, bool verbose) {
         }
     }
     if (verbose)
-        printf("Eisenstein moat K=%.4f: component has %lld primes, farthest |z|=%.4f, %s\n",
-               K, size, farthest, escaped ? "ESCAPED past limit (!)" : "bounded -> moat exists");
+        printf("Eisenstein moat k=sqrt(%lld)=%.4f: component has %lld primes, farthest |z|=%.4f, %s\n",
+               Ksq, sqrt((double)Ksq), size, farthest, escaped ? "ESCAPED past limit (!)" : "bounded -> moat exists");
     return {farthest, escaped, size};
 }
 
@@ -364,7 +367,7 @@ __global__ void mark_eisenstein(uint64_t* gbm, const uint64_t* rsieve, long long
     if (dev_eprime(a, b, rsieve)) atomicOr((unsigned long long*)&gbm[t >> 6], 1ULL << (t & 63));
 }
 
-static MoatResult emoat_gpu(double K, long long R, bool verbose) {
+static MoatResult emoat_gpu(long long Ksq, long long R, bool verbose) {
     const u64 Nmax = (u64)R * R;
     const long long OFF = (long long)(1.1547 * R) + 2, side = 2 * OFF + 1;
     const u64 span = (u64)side * side;
@@ -391,12 +394,12 @@ static MoatResult emoat_gpu(double K, long long R, bool verbose) {
         u64 t = idx(a, b); return (gbm[t >> 6] >> (t & 63)) & 1ULL;
     };
     std::vector<uint64_t> vis(words, 0);
-    auto steps = hex_steps(K);
+    auto steps = hex_steps(Ksq);
     std::queue<std::pair<long long,long long>> q;
     { u64 t = idx(1, -1); vis[t >> 6] |= 1ULL << (t & 63); }
     q.push({1, -1});
     double farthest = sqrt(3.0); long long size = 0; bool reached_boundary = false;
-    const double boundary = (double)R - K;
+    const double boundary = (double)R - sqrt((double)Ksq);
     while (!q.empty()) {
         auto [a, b] = q.front(); q.pop(); ++size;
         double r = sqrt((double)eis_norm(a, b));
@@ -412,10 +415,10 @@ static MoatResult emoat_gpu(double K, long long R, bool verbose) {
     }
     if (verbose) {
         if (reached_boundary)
-            printf("Eisenstein moat K=%.4f: reached disk boundary (|z|=%.1f). INCONCLUSIVE — larger R.\n", K, farthest);
+            printf("Eisenstein moat k=sqrt(%lld)=%.4f: reached disk boundary (|z|=%.1f). INCONCLUSIVE — larger R.\n", Ksq, sqrt((double)Ksq), farthest);
         else
-            printf("Eisenstein moat K=%.4f: BOUNDED. component = %lld primes, farthest |z|=%.4f -> moat confirmed.\n",
-                   K, size, farthest);
+            printf("Eisenstein moat k=sqrt(%lld)=%.4f: BOUNDED. component = %lld primes, farthest |z|=%.4f -> moat confirmed.\n",
+                   Ksq, sqrt((double)Ksq), size, farthest);
     }
     return {farthest, reached_boundary, size};
 }
@@ -945,15 +948,15 @@ static int selftest() {
     double chi2 = hecke_chi2(2000, 36, false);
     assert(chi2 < 2.0 && "Hecke angles not equidistributed -> scan is broken");
 
-    // Moat: step-2 component of the origin is KNOWN to be finite (Gethner-Wagon-Wick).
-    MoatResult m = moat(2.0, 1000, false);
-    assert(!m.escaped && "step-2 moat should be bounded; escape => bug or Fields medal");
+    // Moat: k^2=4 (step length 2) component of the origin is finite (Gethner-Wagon-Wick).
+    MoatResult m = moat(4, 1000, false);
+    assert(!m.escaped && "k^2=4 moat should be bounded; escape => bug or Fields medal");
 
     // GPU disk-sieve must agree with the CPU Miller-Rabin BFS on the symmetry-
-    // invariant quantity (farthest |z|) for several step sizes. R=400 contains all.
-    for (double K : {1.5, 2.0, 2.9}) {
-        MoatResult cpu = moat(K, 100000, false);
-        MoatResult gpu = moat_gpu(K, 400, false);
+    // invariant quantity (farthest |z|) for several k^2 thresholds. R=400 contains all.
+    for (long long Ksq : {2, 4, 8}) {
+        MoatResult cpu = moat(Ksq, 100000, false);
+        MoatResult gpu = moat_gpu(Ksq, 400, false);
         assert(!gpu.escaped && "validation R too small");
         assert(fabs(cpu.farthest - gpu.farthest) < 1e-6 && "GPU bitmap disagrees with CPU BFS");
     }
@@ -969,9 +972,9 @@ static int selftest() {
     assert(!eisenstein_prime(4, 2));              // N=12 composite, off-axis
     double echi2 = ehecke_chi2(1500, 36, false);
     assert(echi2 < 2.0 && "Eisenstein Hecke not equidistributed");
-    for (double K : {1.0, 2.0}) {                 // K=3 component reaches |z|~2252, too big for a quick gate
-        MoatResult cpu = emoat(K, 100000, false);
-        MoatResult gpu = emoat_gpu(K, 400, false);
+    for (long long Ksq : {1, 4}) {                // k^2=9 component reaches |z|~2252, too big for a quick gate
+        MoatResult cpu = emoat(Ksq, 100000, false);
+        MoatResult gpu = emoat_gpu(Ksq, 400, false);
         assert(!gpu.escaped && "Eisenstein validation R too small");
         assert(fabs(cpu.farthest - gpu.farthest) < 1e-6 && "Eisenstein GPU bitmap disagrees with CPU BFS");
     }
@@ -1027,13 +1030,13 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (argc >= 4 && !strcmp(argv[1], "--moat")) {
-        double K = atof(argv[2]); long long R = atoll(argv[3]);
-        moat(K, R, true);
+        long long Ksq = atoll(argv[2]); long long R = atoll(argv[3]);   // Ksq = integer k^2
+        moat(Ksq, R, true);
         return 0;
     }
     if (argc >= 4 && !strcmp(argv[1], "--moat-gpu")) {
-        double K = atof(argv[2]); long long R = atoll(argv[3]);
-        moat_gpu(K, R, true);
+        long long Ksq = atoll(argv[2]); long long R = atoll(argv[3]);
+        moat_gpu(Ksq, R, true);
         return 0;
     }
     if (argc >= 3 && !strcmp(argv[1], "--ehecke")) {
@@ -1043,13 +1046,13 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (argc >= 4 && !strcmp(argv[1], "--emoat")) {
-        double K = atof(argv[2]); long long R = atoll(argv[3]);
-        emoat(K, R, true);
+        long long Ksq = atoll(argv[2]); long long R = atoll(argv[3]);
+        emoat(Ksq, R, true);
         return 0;
     }
     if (argc >= 4 && !strcmp(argv[1], "--emoat-gpu")) {
-        double K = atof(argv[2]); long long R = atoll(argv[3]);
-        emoat_gpu(K, R, true);
+        long long Ksq = atoll(argv[2]); long long R = atoll(argv[3]);
+        emoat_gpu(Ksq, R, true);
         return 0;
     }
     if (argc >= 4 && !strcmp(argv[1], "--gaps")) {
@@ -1092,12 +1095,12 @@ int main(int argc, char** argv) {
         "  %s --selftest\n"
         "  Gaussian Z[i]:\n"
         "  %s --hecke R [bins]     angle equidistribution of Gaussian primes (disk radius R)\n"
-        "  %s --moat  K R          walk from origin past radius R with step <= K? (CPU)\n"
-        "  %s --moat-gpu K R       same, GPU disk-sieve bitmap (scales to the √26 record)\n"
+        "  %s --moat  KSQ R        moat with steps dx^2+dy^2 <= KSQ (integer k^2); CPU\n"
+        "  %s --moat-gpu KSQ R     same, GPU disk-sieve bitmap. KSQ=20 -> sqrt(20) moat\n"
         "  Eisenstein Z[w] (hexagonal lattice):\n"
         "  %s --ehecke R [bins]    angle equidistribution of Eisenstein primes\n"
-        "  %s --emoat  K R         Eisenstein moat walk (CPU)\n"
-        "  %s --emoat-gpu K R      same, GPU disk-sieve bitmap\n"
+        "  %s --emoat  KSQ R       Eisenstein moat, hex-norm step <= KSQ (CPU)\n"
+        "  %s --emoat-gpu KSQ R    same, GPU disk-sieve bitmap\n"
         "  Statistics:\n"
         "  %s --gaps i|w R [seeds] NN gaps vs matched random subset, error bars over seeds\n"
         "  %s --pcf  i|w R [sect]  angular pair-correlation; CV vs sector-count sweep\n"
