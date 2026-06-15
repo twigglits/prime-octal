@@ -224,20 +224,46 @@ Two clean, reproducible facts:
 The NN-distance distributions are discrete spikes at √(norm-form values) — √2, √5, √8… for
 ℤ[i]; 1, √3, 2, √7… for ℤ[ω] — the geometric fingerprint of each lattice.
 
-**Honest caveat (the right null model).** Part of the >1 excess is just lattice hard-core:
-on a grid no two points sit closer than the minimum spacing, so *any* sparse lattice subset
-beats continuous-Poisson at small r. The clean control is a random lattice subset at matched
-density; the prime-specific signal is the gap between primes and *that*, not between primes
-and continuous Poisson. That control is the next refinement — but the lattice-independence of
-the excess already survives it (both lattices share the same hard-core floor).
-
 Reproduce: `./bin/lattice --gaps i 8000`, `./bin/lattice --gaps w 8000`.
+
+## Appendix D: the random-subset control (and what it overturned)
+
+The Appendix-C comparison was against *continuous* Poisson, which is the wrong null on a
+lattice: no two grid points sit closer than the minimum spacing, so *any* sparse lattice
+subset beats continuous-Poisson. The clean control is a **random Bernoulli subset of the
+same lattice at the same density** (deterministic splitmix64 hash per cell) — it shares the
+primes' hard-core floor exactly. `--gaps` now reports both. The naive ~1.14 excess splits
+cleanly in two:
+
+| R | lattice | prime/random *(real signal)* | random/Poisson *(hard-core)* | prime/Poisson *(naive)* |
+|------|------|------|------|------|
+| 1 000 | ℤ[i] | 1.100 | 1.074 | 1.181 |
+| 16 000 | ℤ[i] | **1.082** | 1.052 | 1.139 |
+| 1 000 | ℤ[ω] | 1.062 | 1.107 | 1.175 |
+| 16 000 | ℤ[ω] | **1.054** | 1.073 | 1.131 |
+
+Two results, both of which **correct Appendix C**:
+
+1. **Roughly half the excess was a lattice artifact.** The hard-core (random/Poisson) carries
+   ~5–8% on its own; only the residual prime/random ≈ 5–9% is genuine prime correlation.
+2. **The controlled signal is nearly scale-invariant.** prime/random barely moves with radius
+   (ℤ[i] 1.10→1.08, ℤ[ω] 1.062→1.054), whereas the naive prime/Poisson drifted 1.18→1.14 —
+   the radius-drift was mostly hard-core washing out, *not* a property of the primes.
+3. **The lattices are NOT equivalent — Appendix C's "lattice-independent to <1%" was an
+   artifact of hard-core contamination.** Properly controlled, **Gaussian primes are
+   distinctly more repulsive/regular (~9%) than Eisenstein primes (~5.5%)** — a real,
+   reproducible structural difference between the two rings.
+
+This is exactly why the control matters: comparing to continuous Poisson made the two lattices
+look identical; comparing to a matched random lattice subset reveals they are not.
+
+Reproduce: `./bin/lattice --gaps i|w R` (now prints prime, random-control, and Poisson means).
 
 ### Parked
 
-The √36 column-sweep architecture stays shelved; angular pair-correlation and the
-random-lattice-subset null model are the cheap next statistics. No record-radius grind until
-a statistic demands the reach.
+The √36 column-sweep architecture stays shelved. Cheap next statistic: angular
+pair-correlation (does the ℤ[i] > ℤ[ω] repulsion show up in two-point angular structure too?).
+No record-radius grind until a statistic demands the reach.
 
 ### Why this is the *right* place to look
 

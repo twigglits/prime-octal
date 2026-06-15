@@ -462,7 +462,7 @@ static std::vector<uint64_t> lattice_bitmap(long long R, bool eis, long long OFF
     return gbm;
 }
 
-struct GapStats { double obs_mean, poisson_mean, max_gap; long long count, isolated; };
+struct GapStats { double obs_mean, poisson_mean, random_mean, max_gap; long long count, random_count; };
 
 static GapStats gap_stats(bool eis, long long R, bool verbose) {
     const long long OFF = eis ? (long long)(1.1547 * R) + 2 : R + 2, side = 2 * OFF + 1;
@@ -476,43 +476,69 @@ static GapStats gap_stats(bool eis, long long R, bool verbose) {
     };
     const long long margin = 8;
     const u64 Rin2 = (u64)(R - margin) * (R - margin);
-    const int NB = 40; const double binw = 0.25;
-    std::vector<long long> hist(NB, 0);
-    double sum = 0, maxg = 0; long long cnt = 0, isolated = 0;
-    for (long long a = -OFF; a <= OFF; ++a)
-        for (long long b = -OFF; b <= OFF; ++b) {
-            u64 N = eis ? (u64)(a * a - a * b + b * b) : (u64)(a * a + b * b);
-            if (N > Rin2 || !isP(a, b)) continue;
-            double best = 1e18;
-            for (long long d = 1; d <= 64; ++d) {
-                for (long long dx = -d; dx <= d; ++dx)
-                    for (long long dy = -d; dy <= d; ++dy) {
-                        if (std::max(dx < 0 ? -dx : dx, dy < 0 ? -dy : dy) != d) continue;  // ring only
-                        if (!isP(a + dx, b + dy)) continue;
-                        double dd = dist(dx, dy);
-                        if (dd < best) best = dd;
-                    }
-                if (best <= (double)d) break;   // unscanned cells are all farther than best
+    auto norm = [&](long long a, long long b) -> u64 {
+        return eis ? (u64)(a * a - a * b + b * b) : (u64)(a * a + b * b);
+    };
+
+    // mean NN distance over the points selected by `pred`, scanned inside Rin2.
+    auto scan = [&](auto pred, double& mean, double& maxg, long long& cnt) {
+        double sum = 0; maxg = 0; cnt = 0;
+        for (long long a = -OFF; a <= OFF; ++a)
+            for (long long b = -OFF; b <= OFF; ++b) {
+                if (norm(a, b) > Rin2 || !pred(a, b)) continue;
+                double best = 1e18;
+                for (long long d = 1; d <= 64; ++d) {
+                    for (long long dx = -d; dx <= d; ++dx)
+                        for (long long dy = -d; dy <= d; ++dy) {
+                            if (std::max(dx < 0 ? -dx : dx, dy < 0 ? -dy : dy) != d) continue;
+                            if (!pred(a + dx, b + dy)) continue;
+                            double dd = dist(dx, dy);
+                            if (dd < best) best = dd;
+                        }
+                    if (best <= (double)d) break;
+                }
+                if (best > 1e17) continue;
+                sum += best; ++cnt; if (best > maxg) maxg = best;
             }
-            if (best > 1e17) { ++isolated; continue; }
-            sum += best; ++cnt; if (best > maxg) maxg = best;
-            int bi = (int)(best / binw); if (bi >= NB) bi = NB - 1; ++hist[bi];
-        }
-    double area = M_PI * (double)Rin2;
-    double lambda = cnt / area;
-    GapStats g{ sum / cnt, 1.0 / (2 * sqrt(lambda)), maxg, cnt, isolated };
+        mean = cnt ? sum / cnt : 0;
+    };
+
+    // --- primes ---
+    double p_mean, p_max; long long p_cnt;
+    scan(isP, p_mean, p_max, p_cnt);
+
+    // --- random control: a Bernoulli lattice subset at the SAME density on the
+    //     SAME lattice, so it shares the prime set's hard-core floor. The ratio
+    //     prime/random isolates genuine prime correlation from lattice discreteness.
+    long long cells = 0;
+    for (long long a = -OFF; a <= OFF; ++a)
+        for (long long b = -OFF; b <= OFF; ++b)
+            if (norm(a, b) <= Rin2) ++cells;
+    const double pinc = (double)p_cnt / (double)cells;
+    const u64 thresh = (u64)(pinc * (double)(1ULL << 24));
+    auto isR = [&](long long a, long long b) -> bool {            // deterministic splitmix64 hash
+        if (a < -OFF || a > OFF || b < -OFF || b > OFF || norm(a, b) > (u64)R * R) return false;
+        u64 x = (u64)(a + OFF) * side + (b + OFF) + 0x9E3779B97F4A7C15ULL;
+        x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;
+        x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL;
+        x ^= x >> 31;
+        return (x >> 40) < thresh;
+    };
+    double r_mean, r_max; long long r_cnt;
+    scan(isR, r_mean, r_max, r_cnt);
+
+    double lambda = p_cnt / (M_PI * (double)Rin2);
+    GapStats g{ p_mean, 1.0 / (2 * sqrt(lambda)), r_mean, p_max, p_cnt, r_cnt };
     if (verbose) {
-        printf("Nearest-neighbour gaps, %s, R=%lld: %lld primes (disk r<=%lld), %lld isolated (>64)\n",
-               eis ? "Z[w]" : "Z[i]", R, cnt, R - margin, isolated);
-        printf("  density lambda = %.4g /unit^2\n", lambda);
-        printf("  observed mean NN distance = %.4f\n", g.obs_mean);
-        printf("  Poisson  mean NN distance = %.4f   (ratio obs/Poisson = %.3f)\n",
-               g.poisson_mean, g.obs_mean / g.poisson_mean);
-        printf("  max NN gap = %.4f\n", g.max_gap);
-        double peak = 0; for (int k = 0; k < NB; ++k) peak = std::max(peak, (double)hist[k]);
-        for (int k = 0; k < NB && k * binw <= maxg + binw; ++k)
-            printf("  d<%4.2f %9lld %s\n", (k + 1) * binw, hist[k],
-                   std::string((int)(hist[k] * 50 / (peak + 1)), '#').c_str());
+        printf("Nearest-neighbour gaps, %s, R=%lld\n", eis ? "Z[w]" : "Z[i]", R);
+        printf("  primes:        %lld points, mean NN = %.4f, max gap = %.4f\n", p_cnt, p_mean, p_max);
+        printf("  random subset: %lld points, mean NN = %.4f, max gap = %.4f  (matched density)\n",
+               r_cnt, r_mean, r_max);
+        printf("  continuous Poisson mean NN = %.4f\n", g.poisson_mean);
+        printf("  RATIOS  prime/random = %.4f   prime/Poisson = %.4f   random/Poisson = %.4f\n",
+               p_mean / r_mean, p_mean / g.poisson_mean, r_mean / g.poisson_mean);
+        printf("  --> prime/random > 1 = genuine prime repulsion beyond lattice hard-core;\n");
+        printf("      ~1 = primes indistinguishable from random lattice points at this density.\n");
     }
     return g;
 }
@@ -566,14 +592,17 @@ static int selftest() {
         assert(fabs(cpu.farthest - gpu.farthest) < 1e-6 && "Eisenstein GPU bitmap disagrees with CPU BFS");
     }
 
-    // Gap stats: NN distances are real, minimum ~1, and primes are found in both lattices.
-    GapStats gi = gap_stats(false, 300, false), gw = gap_stats(true, 300, false);
+    // Gap stats + random control: NN means are real and the matched-density random
+    // subset produces a plausible NN mean (the control actually ran).
+    GapStats gi = gap_stats(false, 400, false), gw = gap_stats(true, 400, false);
     assert(gi.count > 0 && gw.count > 0 && "no primes found in gap scan");
     assert(gi.obs_mean >= 1.0 && gi.obs_mean < 5.0 && "Z[i] NN mean implausible");
     assert(gw.obs_mean >= 1.0 && gw.obs_mean < 5.0 && "Z[w] NN mean implausible");
+    assert(gi.random_count > 0 && gi.random_mean >= 1.0 && gi.random_mean < 5.0 && "Z[i] random control failed");
+    assert(gw.random_count > 0 && gw.random_mean >= 1.0 && gw.random_mean < 5.0 && "Z[w] random control failed");
 
-    printf("selftest OK  (Z[i]: chi^2=%.3f, step-2 |z|=%.2f, GPU==CPU, NN=%.2f | Z[w]: chi^2=%.3f, GPU==CPU, NN=%.2f)\n",
-           chi2, m.farthest, gi.obs_mean, echi2, gw.obs_mean);
+    printf("selftest OK  (Z[i]: chi^2=%.3f, |z|=%.2f, NN=%.2f vs rand %.2f | Z[w]: chi^2=%.3f, NN=%.2f vs rand %.2f)\n",
+           chi2, m.farthest, gi.obs_mean, gi.random_mean, echi2, gw.obs_mean, gw.random_mean);
     return 0;
 }
 
