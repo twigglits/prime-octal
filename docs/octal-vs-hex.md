@@ -429,12 +429,50 @@ fundamental-domain folding silently multiplies the variance by the unit order.
 
 Reproduce: `./bin/lattice --ffmatched i|w R`.
 
+## Appendix I: universality collapse, and an honest CUE verdict
+
+The definitive test of a form factor is not one curve but **Rudnick–Waxman universality**: the
+statistic should depend only on the scaling variable `δ = log K / log X` (X = norm scale), so
+runs at *different R* and *different lattices* must collapse onto one master curve. `--ffmatched`
+emits δ per row; sweeping R ∈ {3000, 6000, 10000} for both rings and pooling all points
+(`docs/formfactor_collapse.py`):
+
+**1. The collapse is real.** Ψ_prime(δ) from u=4 and u=6, across all three R, falls on a single
+master curve — **residual RMS = 0.043** about a linear ramp `Ψ ≈ 2.03 δ − 0.20` that saturates
+at Poisson (Ψ→1) near δ ≈ 0.59. The per-δ spread across lattice and R is ≤ 0.015 except at the
+coarsest (few-sector, noisiest) point. So the angular form factor is a function of δ alone,
+**identical for the Gaussian and the (previously unstudied) Eisenstein lattice.** That cross-ring,
+cross-scale collapse is the real result.
+
+**2. But it is NOT the CUE eigenvalue statistic** — tested and rejected. Converting to number
+variance `V = Ψ·λ` and comparing:
+
+| λ | V_data | V_Poisson | V_CUE | data/Poisson | data/CUE |
+|------|--------|-----------|-------|--------------|----------|
+| 8316 | 4784 | 8316 | 1.26 | 0.57 | 3795 |
+| 3173 | 1542 | 3173 | 1.16 | 0.49 | 1326 |
+| 863  | 437  | 863  | 1.03 | 0.51 | 424  |
+
+The data is mildly **sub-Poisson (~0.5×)**, but the CUE number variance (the `(1/π²)log` law) is
+3–4 *orders of magnitude* smaller. So at the accessible scales (R ≤ 10⁴) the primes are in a
+weak-rigidity regime, **not** the CUE-rigid regime. A genuine CUE identification — if it emerges
+at all — lives in the asymptotic X→∞ window with the exact RW smooth normalization, which this
+finite-R sector-count setup does not reach. Claiming a "CUE fit" here would be wrong; the honest
+statement is: **a universal sub-Poisson form factor (same in both rings), quantitatively far from
+CUE at these scales.**
+
+The ramp-saturating-at-Poisson *shape* is reminiscent of the U(N) form factor min(τ,1), but
+shape resemblance is not a fit — the magnitudes disagree by 10³.
+
+Reproduce: sweep `./bin/lattice --ffmatched i|w R` over several R; `python3 docs/formfactor_collapse.py`.
+
 ### Parked
 
-Two open directions, neither a loose end: the √36 column-sweep moat; and a definitive form
-factor (dyadic shell + deterministic control + bootstrap error bars + CUE-curve overlay) to
-turn Appendix H's universality from qualitative collapse into a quantitative fit. The two-point
-story is closed (the singular series, Appendix F).
+Open directions, none a loose end: the √36 column-sweep moat; and — if the CUE regime is the
+goal — reaching the asymptotic RW window (much larger X, the exact smooth-weighted normalization,
+narrow dyadic shells), which is a research program, not a finite-R measurement. The two-point
+story is closed (the singular series, Appendix F); the angular story is a confirmed universal
+sub-Poisson form factor that is demonstrably not CUE at reachable scales.
 
 ### Why this is the *right* place to look
 

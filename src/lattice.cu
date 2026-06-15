@@ -914,11 +914,12 @@ static double form_factor_matched(bool eis, long long R, int nseeds, bool verbos
     if (verbose) {
         printf("Matched form factor, %s, R=%lld, shell norm (%llu,%llu], %.0f primes in sector [0,2pi/%d)\n",
                eis ? "Z[w]" : "Z[i]", R, (unsigned long long)Nlo, (unsigned long long)Nhi, p_sec, u);
-        printf("  lambda(primes/sector)   Psi_prime   Psi_control   D=prime-control\n");
+        printf("  %8s %12s %9s %11s %8s %8s\n", "K", "lambda", "Psi_prime", "Psi_control", "delta", "D");
         for (int g : {1430, 143, 26, 5, 1}) {        // K = KB/g (exact divisors)
             int K = KB / g; double lam = p_sec / K;
             double pp = psi_at(hp, K), pc = psi_ctrl(K);
-            printf("  %18.2f   %9.4f   %11.4f   %+0.4f\n", lam, pp, pc, pp - pc);
+            double delta = log((double)K) / log((double)Nhi);   // RW scaling variable
+            printf("  %8d %12.2f %9.4f %11.4f %8.4f %+8.4f\n", K, lam, pp, pc, delta, pp - pc);
         }
         printf("  --> x-axis lambda makes Z[i] (u=4) and Z[w] (u=6) comparable; the control\n");
         printf("      shares the lattice ray-comb so D isolates the arithmetic (Hecke) part.\n");
