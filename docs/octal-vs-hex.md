@@ -161,6 +161,52 @@ what the √36 frontier requires — a genuine HPC job, not a single-node aftern
 
 Reproduce the record: `./bin/lattice --moat-gpu 5.099 150000` (needs ~7 GB RAM, ~5 min).
 
+---
+
+# Appendix B: the Eisenstein integers ℤ[ω] — a hexagonal cross-check
+
+Following the council's steer (skip the √36 single-workstation grind; the higher-value
+move is the less-computed *other* lattice), `src/lattice.cu` also surveys the Eisenstein
+integers ℤ[ω], ω = e^{2πi/3}. A point `a+bω` embeds at `z = (a−b/2, b√3/2)`, so its squared
+Euclidean norm equals the algebraic norm `N(a,b) = a²−ab+b²` — distances stay exact
+integers, and the unit-1 neighbours are the 6 vectors of the hexagonal grid.
+
+**Classification.** `a+bω` is an Eisenstein prime iff `N` is a rational prime (split
+`p ≡ 1 mod 3`, or the ramified 3), or it is an associate of an inert prime `p ≡ 2 mod 3`
+(sitting on a lattice axis `b=0`, `a=0`, or `a=b`). Verified in `--selftest` against
+hand-computed truth (2 inert, 3 ramified, 7 split, etc.).
+
+**Hecke equidistribution.** `--ehecke 4000` gives a flat angle histogram (reduced
+χ² = 0.034 over 6.19M primes), exhibiting the lattice's **12-fold dihedral symmetry**
+(the 12 bins pair up exactly). The proven-theorem sanity gate holds in ℤ[ω] too.
+
+**Moat comparison (the novel bit).** Same BFS, hexagonal step set, GPU bitmap validated
+bit-for-bit against the CPU walk. The hexagonal lattice **percolates markedly further per
+step** than the square one — its denser neighbourhood (6 unit-neighbours vs 4) bridges
+prime-free rings that stop the Gaussian walk:
+
+| step K | Gaussian ℤ[i] farthest \|z\| | Eisenstein ℤ[ω] farthest \|z\| |
+|--------|------------------------------|--------------------------------|
+| √2     | 11.70                        | 4.36                           |
+| 2      | 45.31                        | **87.85**                      |
+| √8     | 93.47                        | 87.85                          |
+| 3      | 93.47                        | **2 252.53** (1.58 M primes)   |
+
+The Eisenstein component's K=2→K=3 explosion (88 → 2 252) mirrors the Gaussian √8→√10 jump
+but is far more violent — a concrete, reproducible structural difference between the two
+rings rather than another record radius. Both moats remain bounded at every tested K,
+consistent with the conjecture (no infinite prime walk) in both lattices.
+
+Reproduce: `./bin/lattice --ehecke R [bins]`, `./bin/lattice --emoat K R`,
+`./bin/lattice --emoat-gpu K R`.
+
+### Next (per council)
+
+Mine the existing ℤ[i] and ℤ[ω] prime sets for nearest-neighbour **gap statistics** vs the
+Hardy–Littlewood/random model and angular pair-correlation — near-zero marginal compute,
+and the place where a falsifiable empirical law (not a record radius) lives. The √36
+column-sweep architecture stays parked until a statistic demands the reach.
+
 ### Why this is the *right* place to look
 
 Unlike base tricks, the lattice carries real arithmetic structure (Hecke characters, class

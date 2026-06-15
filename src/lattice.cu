@@ -243,6 +243,183 @@ static MoatResult moat_gpu(double K, long long R, bool verbose) {
     return {farthest, reached_boundary, size};
 }
 
+// ===========================================================================
+// EISENSTEIN INTEGERS Z[w], w = e^{2pi i/3}.  (council pivot: the less-computed
+// hexagonal-lattice analogue of the Gaussian moat / Hecke story.)
+//
+// A point a + b*w embeds in the plane at z = (a - b/2, b*sqrt3/2), so the
+// SQUARED Euclidean norm equals the algebraic norm N(a,b) = a^2 - a*b + b^2.
+// Distances — all the moat needs — are therefore exact integers in (a,b) coords.
+// The 6 units are (±1,0),(0,±1),±(1,1); the unit-1 neighbours are the 6 vectors
+// of norm 1, i.e. the hexagonal grid.
+//
+// a + b*w is an Eisenstein prime iff:
+//   * N(a,b) is a rational prime   (split p ≡ 1 mod 3, or the ramified 3), OR
+//   * it is an associate of an inert rational prime p ≡ 2 mod 3 — these sit on
+//     the three lattice axes b=0, a=0, a=b at magnitude p.
+// (A perfect-square norm off those axes is a genuine factorisation -> composite.)
+
+static inline long long eis_norm(long long a, long long b) { return a * a - a * b + b * b; }
+
+static inline bool eisenstein_prime(long long a, long long b) {
+    long long N = eis_norm(a, b);
+    if (N == 0) return false;
+    if (is_prime_u64((u64)N)) return true;                 // split or ramified
+    if (b == 0 || a == 0 || a == b) {                      // inert, on a hex axis
+        long long p = (a < 0 ? -a : a);
+        if (a == 0) p = (b < 0 ? -b : b);
+        return is_prime_u64((u64)p) && (p % 3 == 2);
+    }
+    return false;
+}
+
+__device__ __forceinline__ bool dev_eprime(long long a, long long b, const uint64_t* s) {
+    long long N = a * a - a * b + b * b;
+    if (N == 0) return false;
+    if (dev_isrp((u64)N, s)) return true;
+    if (b == 0 || a == 0 || a == b) {
+        long long p = (a < 0 ? -a : a);
+        if (a == 0) p = (b < 0 ? -b : b);
+        return dev_isrp((u64)p, s) && (p % 3 == 2);
+    }
+    return false;
+}
+
+// Hecke equidistribution in Z[w]: angles of Eisenstein primes over the full disk
+// of radius R. Like Z[i] they equidistribute, so the histogram is flat -> chi^2 ~ 1.
+static double ehecke_chi2(long long R, int bins, bool verbose) {
+    std::vector<long long> h(bins, 0);
+    long long total = 0;
+    const u64 R2 = (u64)R * (u64)R;
+    const long long A = (long long)(1.1547 * R) + 2;        // |a|,|b| bound for N<=R^2
+    const double TAU = 2.0 * M_PI, scale = bins / TAU, s3 = sqrt(3.0) / 2.0;
+    for (long long a = -A; a <= A; ++a)
+        for (long long b = -A; b <= A; ++b) {
+            if ((u64)eis_norm(a, b) > R2 || (a == 0 && b == 0)) continue;
+            if (!eisenstein_prime(a, b)) continue;
+            double ang = atan2(b * s3, a - b / 2.0);          // (-pi, pi]
+            if (ang < 0) ang += TAU;
+            int k = (int)(ang * scale);
+            if (k >= bins) k = bins - 1;
+            ++h[k]; ++total;
+        }
+    double exp = (double)total / bins, chi2 = 0;
+    for (int k = 0; k < bins; ++k) { double d = h[k] - exp; chi2 += d * d / exp; }
+    double reduced = chi2 / (bins - 1);
+    if (verbose) {
+        printf("Eisenstein Hecke, R=%lld: %lld primes in disk, %d bins over 360deg\n", R, total, bins);
+        for (int k = 0; k < bins; ++k)
+            printf("  [%5.1f-%5.1f deg] %8lld %s\n", k * 360.0 / bins, (k + 1) * 360.0 / bins, h[k],
+                   std::string((int)(h[k] * 50 / (exp * 2 + 1)), '#').c_str());
+        printf("  reduced chi^2 = %.4f  (-> 1.0 = equidistributed)\n", reduced);
+    }
+    return reduced;
+}
+
+// hex steps of length <= K: integer offsets with 1 <= N(da,db) <= K^2.
+static std::vector<std::pair<long long,long long>> hex_steps(double K) {
+    std::vector<std::pair<long long,long long>> s;
+    long long M = (long long)ceil(K * 1.16) + 1;
+    for (long long da = -M; da <= M; ++da)
+        for (long long db = -M; db <= M; ++db) {
+            long long n = eis_norm(da, db);
+            if (n >= 1 && (double)n <= K * K) s.push_back({da, db});
+        }
+    return s;
+}
+
+// CPU Miller-Rabin BFS moat in Z[w] (full plane). Reference + small-scale truth.
+static MoatResult emoat(double K, long long limit, bool verbose) {
+    auto steps = hex_steps(K);
+    auto key = [](long long a, long long b) { return ((a + 0x40000000LL) << 32) | (b + 0x40000000LL); };
+    std::unordered_set<long long> seen;
+    std::queue<std::pair<long long,long long>> q;
+    q.push({1, -1}); seen.insert(key(1, -1));               // nearest Eisenstein prime, N=3
+    double farthest = sqrt(3.0); bool escaped = false; long long size = 0;
+    while (!q.empty()) {
+        auto [a, b] = q.front(); q.pop(); ++size;
+        double r = sqrt((double)eis_norm(a, b));
+        if (r > farthest) farthest = r;
+        if (r > limit) { escaped = true; break; }
+        for (auto [dx, dy] : steps) {
+            long long na = a + dx, nb = b + dy, kk = key(na, nb);
+            if (seen.count(kk) || !eisenstein_prime(na, nb)) continue;
+            seen.insert(kk); q.push({na, nb});
+        }
+    }
+    if (verbose)
+        printf("Eisenstein moat K=%.4f: component has %lld primes, farthest |z|=%.4f, %s\n",
+               K, size, farthest, escaped ? "ESCAPED past limit (!)" : "bounded -> moat exists");
+    return {farthest, escaped, size};
+}
+
+// GPU disk-sieve Eisenstein moat. Full-plane offset grid (no symmetry fold yet —
+// ponytail: the 12-fold hex symmetry is the obvious memory win when pushing for a
+// record radius; for the first port we trade ~12x memory for simplicity).
+__global__ void mark_eisenstein(uint64_t* gbm, const uint64_t* rsieve, long long OFF, long long side, u64 R2) {
+    u64 t = (u64)blockIdx.x * blockDim.x + threadIdx.x;
+    if (t >= (u64)side * side) return;
+    long long a = (long long)(t / side) - OFF, b = (long long)(t % side) - OFF;
+    if ((u64)(a * a - a * b + b * b) > R2) return;
+    if (dev_eprime(a, b, rsieve)) atomicOr((unsigned long long*)&gbm[t >> 6], 1ULL << (t & 63));
+}
+
+static MoatResult emoat_gpu(double K, long long R, bool verbose) {
+    const u64 Nmax = (u64)R * R;
+    const long long OFF = (long long)(1.1547 * R) + 2, side = 2 * OFF + 1;
+    const u64 span = (u64)side * side;
+    const size_t words = (span + 63) / 64;
+    if (verbose) printf("Building GPU Eisenstein bitmap: R=%lld, grid %lldx%lld (%.2f GB)...\n",
+                        R, side, side, (words * 8.0 * 2 + Nmax / 16.0) / 1e9);
+
+    std::vector<uint64_t> rs = odd_sieve(Nmax);
+    uint64_t *d_rs = nullptr, *d_gbm = nullptr;
+    CUDA_OK(cudaMalloc(&d_rs, rs.size() * 8));
+    CUDA_OK(cudaMemcpy(d_rs, rs.data(), rs.size() * 8, cudaMemcpyHostToDevice));
+    CUDA_OK(cudaMalloc(&d_gbm, words * 8));
+    CUDA_OK(cudaMemset(d_gbm, 0, words * 8));
+    int tpb = 256; u64 blocks = (span + tpb - 1) / tpb;
+    mark_eisenstein<<<(unsigned)blocks, tpb>>>(d_gbm, d_rs, OFF, side, Nmax);
+    CUDA_OK(cudaGetLastError()); CUDA_OK(cudaDeviceSynchronize());
+    std::vector<uint64_t> gbm(words);
+    CUDA_OK(cudaMemcpy(gbm.data(), d_gbm, words * 8, cudaMemcpyDeviceToHost));
+    CUDA_OK(cudaFree(d_rs)); CUDA_OK(cudaFree(d_gbm));
+
+    auto idx = [&](long long a, long long b) { return (u64)(a + OFF) * side + (b + OFF); };
+    auto gp = [&](long long a, long long b) -> bool {
+        if (a < -OFF || a > OFF || b < -OFF || b > OFF || (u64)eis_norm(a, b) > Nmax) return false;
+        u64 t = idx(a, b); return (gbm[t >> 6] >> (t & 63)) & 1ULL;
+    };
+    std::vector<uint64_t> vis(words, 0);
+    auto steps = hex_steps(K);
+    std::queue<std::pair<long long,long long>> q;
+    { u64 t = idx(1, -1); vis[t >> 6] |= 1ULL << (t & 63); }
+    q.push({1, -1});
+    double farthest = sqrt(3.0); long long size = 0; bool reached_boundary = false;
+    const double boundary = (double)R - K;
+    while (!q.empty()) {
+        auto [a, b] = q.front(); q.pop(); ++size;
+        double r = sqrt((double)eis_norm(a, b));
+        if (r > farthest) farthest = r;
+        if (r > boundary) reached_boundary = true;
+        for (auto [dx, dy] : steps) {
+            long long na = a + dx, nb = b + dy;
+            if (!gp(na, nb)) continue;
+            u64 t = idx(na, nb);
+            if ((vis[t >> 6] >> (t & 63)) & 1ULL) continue;
+            vis[t >> 6] |= 1ULL << (t & 63); q.push({na, nb});
+        }
+    }
+    if (verbose) {
+        if (reached_boundary)
+            printf("Eisenstein moat K=%.4f: reached disk boundary (|z|=%.1f). INCONCLUSIVE — larger R.\n", K, farthest);
+        else
+            printf("Eisenstein moat K=%.4f: BOUNDED. component = %lld primes, farthest |z|=%.4f -> moat confirmed.\n",
+                   K, size, farthest);
+    }
+    return {farthest, reached_boundary, size};
+}
+
 // --- self-test (red->green gate) -------------------------------------------
 static int selftest() {
     // classification against hand-computed truth
@@ -274,8 +451,26 @@ static int selftest() {
         assert(fabs(cpu.farthest - gpu.farthest) < 1e-6 && "GPU bitmap disagrees with CPU BFS");
     }
 
-    printf("selftest OK  (classification + Hecke chi^2=%.3f + step-2 moat |z|=%.2f + GPU==CPU farthest for K=1.5,2,2.9)\n",
-           chi2, m.farthest);
+    // --- Eisenstein Z[w] ---
+    assert(eisenstein_prime(1, -1));              // N=3, ramified prime
+    assert(eisenstein_prime(2, 0));               // 2 ≡ 2 mod3, inert
+    assert(!eisenstein_prime(3, 0));              // 3 ramifies, the unit*prime is (1,-1)
+    assert(eisenstein_prime(3, 1));               // N=7, split prime (7 ≡ 1 mod3)
+    assert(!eisenstein_prime(7, 0));              // 7 splits -> not prime as a point
+    assert(eisenstein_prime(5, 0));               // 5 ≡ 2 mod3, inert
+    assert(!eisenstein_prime(1, 1) && !eisenstein_prime(0, 0)); // unit, zero
+    assert(!eisenstein_prime(4, 2));              // N=12 composite, off-axis
+    double echi2 = ehecke_chi2(1500, 36, false);
+    assert(echi2 < 2.0 && "Eisenstein Hecke not equidistributed");
+    for (double K : {1.0, 2.0}) {                 // K=3 component reaches |z|~2252, too big for a quick gate
+        MoatResult cpu = emoat(K, 100000, false);
+        MoatResult gpu = emoat_gpu(K, 400, false);
+        assert(!gpu.escaped && "Eisenstein validation R too small");
+        assert(fabs(cpu.farthest - gpu.farthest) < 1e-6 && "Eisenstein GPU bitmap disagrees with CPU BFS");
+    }
+
+    printf("selftest OK  (Z[i]: chi^2=%.3f, step-2 |z|=%.2f, GPU==CPU | Z[w]: chi^2=%.3f, GPU==CPU moat)\n",
+           chi2, m.farthest, echi2);
     return 0;
 }
 
@@ -297,12 +492,33 @@ int main(int argc, char** argv) {
         moat_gpu(K, R, true);
         return 0;
     }
+    if (argc >= 3 && !strcmp(argv[1], "--ehecke")) {
+        long long R = atoll(argv[2]);
+        int bins = argc >= 4 ? atoi(argv[3]) : 36;
+        ehecke_chi2(R, bins, true);
+        return 0;
+    }
+    if (argc >= 4 && !strcmp(argv[1], "--emoat")) {
+        double K = atof(argv[2]); long long R = atoll(argv[3]);
+        emoat(K, R, true);
+        return 0;
+    }
+    if (argc >= 4 && !strcmp(argv[1], "--emoat-gpu")) {
+        double K = atof(argv[2]); long long R = atoll(argv[3]);
+        emoat_gpu(K, R, true);
+        return 0;
+    }
     fprintf(stderr,
         "usage:\n"
         "  %s --selftest\n"
+        "  Gaussian Z[i]:\n"
         "  %s --hecke R [bins]     angle equidistribution of Gaussian primes (disk radius R)\n"
-        "  %s --moat  K R          can primes be walked from origin past radius R with step <= K?\n"
-        "  %s --moat-gpu K R       same, GPU disk-sieve bitmap (scales to the √26 record)\n",
-        argv[0], argv[0], argv[0], argv[0]);
+        "  %s --moat  K R          walk from origin past radius R with step <= K? (CPU)\n"
+        "  %s --moat-gpu K R       same, GPU disk-sieve bitmap (scales to the √26 record)\n"
+        "  Eisenstein Z[w] (hexagonal lattice):\n"
+        "  %s --ehecke R [bins]    angle equidistribution of Eisenstein primes\n"
+        "  %s --emoat  K R         Eisenstein moat walk (CPU)\n"
+        "  %s --emoat-gpu K R      same, GPU disk-sieve bitmap\n",
+        argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
     return 1;
 }
