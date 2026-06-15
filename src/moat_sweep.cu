@@ -93,15 +93,18 @@ struct DSU {
             id = p;
         }
     }
-    std::vector<int> path, dec;
+    // Allocation-free path-halving: point x at its grandparent each step. Moving to
+    // g (already valid) — never the just-decref'd p — sidesteps the free-during-walk
+    // hazard, so no path vector is needed. Refcounts stay exact: g gains x, p loses x.
     int find(int x) {
-        int r = x; while (par[r] != r) r = par[r];
-        path.clear();
-        for (int n = x; par[n] != r; n = par[n]) path.push_back(n);
-        for (int m : path) { dec.push_back(par[m]); par[m] = r; ref[r]++; }   // reparent all first
-        for (int oldp : dec) decref(oldp);                                    // then drop old-parent refs
-        dec.clear();
-        return r;
+        while (par[x] != x) {
+            int p = par[x];
+            if (par[p] == p) return p;          // x's parent is the root
+            int g = par[p];
+            par[x] = g; ref[g]++; decref(p);    // x -> grandparent; p may free (we move to g)
+            x = g;
+        }
+        return x;
     }
     // returns merged root
     int unite(int x, int y) {
