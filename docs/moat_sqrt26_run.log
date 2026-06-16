@@ -1,0 +1,75 @@
+  [sweep] col 0/1050000 (0.0%)  origin |z| so far=0  live records=82248 (53 MB)
+  [sweep] col 20000/1050000 (1.9%)  origin |z| so far=984203  live records=660168 (69 MB)
+  [sweep] col 40000/1050000 (3.8%)  origin |z| so far=991794  live records=661818 (69 MB)
+  [sweep] col 60000/1050000 (5.7%)  origin |z| so far=991794  live records=686843 (70 MB)
+  [sweep] col 80000/1050000 (7.6%)  origin |z| so far=991794  live records=663923 (69 MB)
+  [sweep] col 100000/1050000 (9.5%)  origin |z| so far=993613  live records=671917 (69 MB)
+  [sweep] col 120000/1050000 (11.4%)  origin |z| so far=1002563  live records=663989 (69 MB)
+  [sweep] col 140000/1050000 (13.3%)  origin |z| so far=1002563  live records=656893 (69 MB)
+  [sweep] col 160000/1050000 (15.2%)  origin |z| so far=1009198  live records=655099 (69 MB)
+  [sweep] col 180000/1050000 (17.1%)  origin |z| so far=1009198  live records=660663 (69 MB)
+  [sweep] col 200000/1050000 (19.0%)  origin |z| so far=1009198  live records=647877 (69 MB)
+  [sweep] col 220000/1050000 (21.0%)  origin |z| so far=1009198  live records=657297 (69 MB)
+  [sweep] col 240000/1050000 (22.9%)  origin |z| so far=1009198  live records=624632 (68 MB)
+  [sweep] col 260000/1050000 (24.8%)  origin |z| so far=1009198  live records=652636 (69 MB)
+  [sweep] col 280000/1050000 (26.7%)  origin |z| so far=1009198  live records=643710 (68 MB)
+  [sweep] col 300000/1050000 (28.6%)  origin |z| so far=1009198  live records=642069 (68 MB)
+  [sweep] col 320000/1050000 (30.5%)  origin |z| so far=1009198  live records=628178 (68 MB)
+  [sweep] col 340000/1050000 (32.4%)  origin |z| so far=1009198  live records=634873 (68 MB)
+  [sweep] col 360000/1050000 (34.3%)  origin |z| so far=1009198  live records=610993 (68 MB)
+  [sweep] col 380000/1050000 (36.2%)  origin |z| so far=1015639  live records=590718 (67 MB)
+  [sweep] col 400000/1050000 (38.1%)  origin |z| so far=1015639  live records=642882 (68 MB)
+  [sweep] col 420000/1050000 (40.0%)  origin |z| so far=1015639  live records=591652 (67 MB)
+  [sweep] col 440000/1050000 (41.9%)  origin |z| so far=1015639  live records=585474 (67 MB)
+  [sweep] col 460000/1050000 (43.8%)  origin |z| so far=1015639  live records=585111 (67 MB)
+  [sweep] col 480000/1050000 (45.7%)  origin |z| so far=1015639  live records=586689 (67 MB)
+  [sweep] col 500000/1050000 (47.6%)  origin |z| so far=1015639  live records=564304 (66 MB)
+  [sweep] col 520000/1050000 (49.5%)  origin |z| so far=1015639  live records=586128 (67 MB)
+  [sweep] col 540000/1050000 (51.4%)  origin |z| so far=1015639  live records=563135 (66 MB)
+  [sweep] col 560000/1050000 (53.3%)  origin |z| so far=1015639  live records=544237 (66 MB)
+  [sweep] col 580000/1050000 (55.2%)  origin |z| so far=1015639  live records=560657 (66 MB)
+  [sweep] col 600000/1050000 (57.1%)  origin |z| so far=1015639  live records=525199 (65 MB)
+  [sweep] col 620000/1050000 (59.0%)  origin |z| so far=1015639  live records=525125 (65 MB)
+  [sweep] col 640000/1050000 (61.0%)  origin |z| so far=1015639  live records=517281 (65 MB)
+  [sweep] col 660000/1050000 (62.9%)  origin |z| so far=1015639  live records=497137 (64 MB)
+  [sweep] col 680000/1050000 (64.8%)  origin |z| so far=1015639  live records=500555 (64 MB)
+  [sweep] col 700000/1050000 (66.7%)  origin |z| so far=1015639  live records=482702 (64 MB)
+  [sweep] col 720000/1050000 (68.6%)  origin |z| so far=1015639  live records=468601 (64 MB)
+  [sweep] col 740000/1050000 (70.5%)  origin |z| so far=1015639  live records=468843 (64 MB)
+  [sweep] col 760000/1050000 (72.4%)  origin |z| so far=1015639  live records=446605 (63 MB)
+  [sweep] col 780000/1050000 (74.3%)  origin |z| so far=1015639  live records=428834 (62 MB)
+  [sweep] col 800000/1050000 (76.2%)  origin |z| so far=1015639  live records=408258 (62 MB)
+  [sweep] col 820000/1050000 (78.1%)  origin |z| so far=1015639  live records=415309 (62 MB)
+  [sweep] col 840000/1050000 (80.0%)  origin |z| so far=1015639  live records=394278 (61 MB)
+  [sweep] col 860000/1050000 (81.9%)  origin |z| so far=1015639  live records=369008 (61 MB)
+  [sweep] col 880000/1050000 (83.8%)  origin |z| so far=1015639  live records=349512 (60 MB)
+  [sweep] col 900000/1050000 (85.7%)  origin |z| so far=1015639  live records=329276 (60 MB)
+  [sweep] col 920000/1050000 (87.6%)  origin |z| so far=1015639  live records=306471 (59 MB)
+  [sweep] col 940000/1050000 (89.5%)  origin |z| so far=1015639  live records=289373 (59 MB)
+  [sweep] col 960000/1050000 (91.4%)  origin |z| so far=1015639  live records=267910 (58 MB)
+  [sweep] col 980000/1050000 (93.3%)  origin |z| so far=1015639  live records=230721 (57 MB)
+Column-sweep moat k=sqrt(26)=5.0990, R=1050000, window=6 cols, peak records=730549 (70.9 MB)
+  BOUNDED: origin component sealed off, farthest |z|=1015638.7651 -> moat confirmed
+	Command being timed: "bin/moat_sweep --moat-sweep 26 1050000"
+	User time (seconds): 45702.65
+	System time (seconds): 16.72
+	Percent of CPU this job got: 100%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 12:41:32
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 252036
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 47629
+	Voluntary context switches: 1776234
+	Involuntary context switches: 353328
+	Swaps: 0
+	File system inputs: 8
+	File system outputs: 416
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

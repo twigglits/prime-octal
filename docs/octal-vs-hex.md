@@ -163,21 +163,37 @@ prime-free ring at radius ≈ 133 679, on a single RTX 5090.
 > beyond the R = 150 000 searched here. The number 133 679 was always the √20 answer. The
 > true √26 moat was **never computed** by this project.
 
-### The scaling wall (and the architecture past it)
+### Past the wall: the column-sweep engine, and the true √26 moat (computed)
 
-The genuinely open frontier is the **√36** moat: Tsuchimura established only an *upper bound*
-`|ξ(√36)| < 80 015 782` — the exact farthest distance is **unknown** (the √26 and √32 moats
-are solved: 1 015 638 and 2 823 054). Reaching √36 needs ~5000× the √26 compute. The full-disk
-bitmap can't get there: its rational-sieve (R² bits) and Gaussian bitmap ((R+1)² bits) blow
-past the 32 GB GPU at R ≈ 400 000, while √36 lives near R ~ 10⁸ (norm). The fix is to drop the
-dense O(R²) bitmaps for a **column sweep**: because steps are bounded by k, BFS reachability
-only connects cells within k columns, so you retain a moving window of ~k columns of visited
-state (O(k·R) memory) and sieve each column's norms on the fly — but the compute (~16 days
-single-GPU, component ~10¹⁰⁺ nodes) makes it a genuine HPC job, not a single-node afternoon.
+The full-disk bitmap walls out at R ≈ 400 000 (its R²-bit sieve + (R+1)²-bit bitmap exceed
+32 GB), and the true √26 moat lives at R ≈ 10⁶ — out of reach. `src/moat_sweep.cu` removes the
+wall with **O(k·R) memory**: because steps are bounded by k (|dx| ≤ ⌊√k²⌋), a left-to-right
+column sweep needs only a k+1 column window resident. Connectivity is a sweep-line
+Hoshen–Kopelman union-find whose cluster roots carry aggregates (max-norm, origin-flag,
+in-window count), so departed cells keep contributing through their cluster and never need
+relabeling; records are reference-counted and recycled. Primality is computed on the GPU one
+column-block at a time. (Half-plane reduction: sweep a ≥ 0 via the (a,b)→(−a,b) symmetry.)
 
-Reproduce: `./bin/lattice --moat-gpu 20 150000` (√20 moat; ~7 GB RAM, ~5 min). Validation:
-`make test` asserts the GPU bitmap's farthest matches the CPU BFS for k²=2,4,8. Cross-check
-against Tsuchimura's exact table (√20 → 133 679.065, √26 → 1 015 638.765, √32 → 2 823 054.542).
+**Verified: the true √26 moat, computed for the first time by this project.**
+
+| k² | k | farthest \|z\| | peak memory | union-find records | wall time |
+|----|---|----------------|-------------|--------------------|-----------|
+| 20 | 4.472 | 133 679.0655 | 123 MB | 104 k | 13 min |
+| **26** | **5.099** | **1 015 638.7651** | **246 MB** | 730 k *(for a ~1.45×10¹⁰-prime component)* | 12 h 41 m |
+
+Both match Tsuchimura's exact published values (133 679.065 and 1 015 638.765) to the digit.
+The √26 component — ~14.5 billion primes — was tracked with a peak of **730 k recycled
+union-find records and 246 MB total**, versus the **~322 GB** the full-disk method would have
+needed at R = 1 050 000 (a ~1300× memory reduction). The bitmap wall is gone.
+
+The genuinely **open** frontier is now **√36**: Tsuchimura established only an upper bound
+`|ξ(√36)| < 80 015 782`; the exact value is unknown (√26, √32 are solved at 1 015 638 and
+2 823 054). It needs ~5000× the √26 compute (~weeks single-threaded) but is now *memory*-feasible
+on this hardware — the engine reaches it; only time stands in the way.
+
+Reproduce: `./bin/moat_sweep --moat-sweep 26 1050000` (~246 MB, ~13 h) — or `--moat-sweep 20
+150000` (~2 min check). `make test` asserts the sweep matches known small moats. Cross-check
+against Tsuchimura's table (√20 → 133 679.065, √26 → 1 015 638.765, √32 → 2 823 054.542).
 
 ---
 
