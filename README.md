@@ -44,6 +44,32 @@ when the crystal **grows to √n**, which is the Sieve of Eratosthenes itself. N
 crystal can do it (**primality is not periodic** — proof included). Built with
 `make crystal`.
 
+## Visual gallery — the Gaussian moat and the prime crystal
+
+The geometric side of the project (full write-up in
+[`docs/octal-vs-hex.md`](docs/octal-vs-hex.md), appendices) lives in the **Gaussian
+integers ℤ[i]**, where a prime either splits (`p ≡ 1 mod 4`, `p = a²+b²`), stays inert
+(`p ≡ 3 mod 4`), or ramifies (2). Plotting every Gaussian prime in a disk gives a
+crystal with full 8-fold dihedral symmetry — and asking *how far you can walk on it with
+bounded steps* is the open **Gaussian moat problem**.
+
+| The Gaussian moat | The Gaussian prime crystal |
+|---|---|
+| ![Gaussian moat](docs/fig-gaussian-moat.png) | ![Gaussian prime lattice](docs/fig-gaussian-lattice.png) |
+| Stepping from `1+i` with bounded step size, the origin sits in a **finite island** sealed off by a prime-free ring (the *moat*). The √8 island holds exactly 2,996 primes and reaches `\|z\|≈93.5` — the walk cannot escape. BFS counts match Tsuchimura's published values to the digit. | The same primes, full plane, coloured by `\|z\|`. The empty cross (axes) and the dihedral repeats are the arithmetic of ℤ[i] made visible. |
+
+The project's *other* crystal is the **octal prime lattice** in 3D — the literal
+construction from the brief, `X = n mod 8`, `Y = (n/8) mod 8`, `Z = n/64`. Primes land
+only on the corridors `n mod 8 ∈ {1,3,5,7}`; the even planes are forbidden and sit empty:
+
+<p align="center"><img src="docs/fig-octal-crystal-3d.png" width="520" alt="Octal prime lattice in 3D"></p>
+
+Reproduce (needs the venv — `python3 -m venv .venv && .venv/bin/pip install numpy matplotlib`):
+
+```sh
+.venv/bin/python tools/lattice_plots.py    # writes docs/fig-gaussian-{moat,lattice}.png + fig-octal-crystal-3d.png
+```
+
 ## The octal machinery
 
 Base 8 admits exact divisibility identities, analogous to decimal digit-sum tricks:
@@ -176,6 +202,7 @@ src/main.cu        CLI: survey reports, CSVs, --judge
 src/test_main.cu   the full test suite (make test)
 src/cpu_survey.cpp GPU-free octal-wheel vs hex-wheel comparative survey
 tools/visualize.py renders the prime-wheel figures (SVG, stdlib only)
+tools/lattice_plots.py Gaussian moat + prime-crystal figures (matplotlib, needs .venv)
 docs/              sample reports (8^10, 8^12, CPU 1e10) + octal-vs-hex.md + figures
 results/           generated reports + CSVs (gitignored)
 ```
