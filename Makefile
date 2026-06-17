@@ -11,7 +11,7 @@ BIN       := bin
 
 HDRS := src/octal_core.h src/sieve.cuh src/post.h src/primality.h
 
-all: $(BIN)/prime_octal $(BIN)/test_prime_octal
+all: $(BIN)/prime_octal $(BIN)/test_prime_octal $(BIN)/lattice $(BIN)/moat_sweep
 
 $(BIN)/prime_octal: src/main.cu $(HDRS)
 	@mkdir -p $(BIN)
@@ -21,8 +21,18 @@ $(BIN)/test_prime_octal: src/test_main.cu $(HDRS)
 	@mkdir -p $(BIN)
 	$(NVCC) $(NVCCFLAGS) $(GENCODE) -o $@ $<
 
-test: $(BIN)/test_prime_octal
+$(BIN)/lattice: src/lattice.cu src/primality.h src/octal_core.h
+	@mkdir -p $(BIN)
+	$(NVCC) $(NVCCFLAGS) $(GENCODE) -o $@ $<
+
+$(BIN)/moat_sweep: src/moat_sweep.cu
+	@mkdir -p $(BIN)
+	$(NVCC) $(NVCCFLAGS) $(GENCODE) -o $@ $<
+
+test: $(BIN)/test_prime_octal $(BIN)/lattice $(BIN)/moat_sweep
 	$(BIN)/test_prime_octal
+	$(BIN)/lattice --selftest
+	$(BIN)/moat_sweep --selftest
 
 run: $(BIN)/prime_octal
 	$(BIN)/prime_octal --octal-digits 10 --out results
